@@ -1,20 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Menu, Wifi, WifiOff, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Menu, Wifi, WifiOff, RefreshCw, CheckCircle2, LogOut } from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
 import { Button } from "./ui/button";
 import { useStore } from "@/store/useStore";
 import { cn } from "@/lib/utils";
 import { syncToSheets } from "@/lib/sync";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export function Topbar() {
   const { setSidebarOpen, isOnline, setIsOnline } = useStore();
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
-  // Tracks whether we *just* came back online (offline → online transition)
   const wasOffline = useRef(false);
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
 
   useEffect(() => {
     const handleOnline = async () => {
@@ -133,6 +140,17 @@ export function Topbar() {
         </div>
 
         <ModeToggle />
+
+        {/* Logout */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          onClick={handleLogout}
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
     </header>
   );
