@@ -1,7 +1,7 @@
 {
-  "name": "OptiSync",
-  "short_name": "OptiSync",
-  "description": "Optical Shop Management System",
+  "name": "Shree Opticals",
+  "short_name": "Shree Opticals",
+  "description": "Shree Opticals Management System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

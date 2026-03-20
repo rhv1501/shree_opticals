@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80" fill="none">
+  <!-- Left lens frame -->
+  <rect x="8" y="18" width="72" height="44" rx="22" ry="22"
+        stroke="#3B82F6" stroke-width="7" fill="none"/>
+
+  <!-- Right lens frame -->
+  <rect x="120" y="18" width="72" height="44" rx="22" ry="22"
+        stroke="#3B82F6" stroke-width="7" fill="none"/>
+
+  <!-- Bridge connecting the two lenses -->
+  <path d="M80 38 Q100 28 120 38" stroke="#3B82F6" stroke-width="6"
+        stroke-linecap="round" fill="none"/>
+
+  <!-- Left temple arm -->
+  <line x1="8" y1="36" x2="0" y2="42"
+        stroke="#3B82F6" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Right temple arm -->
+  <line x1="192" y1="36" x2="200" y2="42"
+        stroke="#3B82F6" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Left lens glare highlight -->
+  <line x1="26" y1="28" x2="36" y2="32"
+        stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Right lens glare highlight -->
+  <line x1="138" y1="28" x2="148" y2="32"
+        stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+</svg>
