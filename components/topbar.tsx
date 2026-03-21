@@ -78,6 +78,14 @@ export function Topbar() {
     }
   };
 
+  useEffect(() => {
+    // initial auto-sync on load
+    if (navigator.onLine) {
+      runSync({ silent: true, isAutoSync: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleManualSync = () => {
     if (!isOnline) {
       toast.error("You're offline. Records will sync automatically when reconnected.");

@@ -11,8 +11,6 @@ export async function syncToSheets(): Promise<{ synced: number }> {
   ]);
 
   const unsyncedSales = allSales.filter((s) => s.synced === false);
-  if (unsyncedSales.length === 0) return { synced: 0 };
-
   const unsyncedCustomerIds = new Set(unsyncedSales.map((s) => s.customerId));
   const unsyncedCustomers = allCustomers.filter((c) =>
     unsyncedCustomerIds.has(c.id)
@@ -29,10 +27,41 @@ export async function syncToSheets(): Promise<{ synced: number }> {
     throw new Error(data.error || "Sync failed");
   }
 
-  // Mark synced in local DB
-  await db.transaction("rw", db.sales, async () => {
+  // Mark synced in local DB and process pulled data
+  await db.transaction("rw", db.sales, db.customers, async () => {
     for (const sale of unsyncedSales) {
       await db.sales.update(sale.id, { synced: true });
+    }
+
+    if (data.pulledCustomers) {
+      for (const pulled of data.pulledCustomers) {
+        const existing = await db.customers.get(pulled.id);
+        if (!existing || new Date(pulled.updatedAt) > new Date(existing.updatedAt)) {
+          await db.customers.put(pulled);
+        }
+      }
+    }
+
+    if (data.pulledSales) {
+      const pushedSaleIds = new Set(unsyncedSales.map((s) => s.id));
+      for (const pulled of data.pulledSales) {
+        const existing = await db.sales.get(pulled.id);
+        if (!existing) {
+          await db.sales.put(pulled);
+        } else if (!pushedSaleIds.has(pulled.id) && existing.synced) {
+          if (new Date(pulled.updatedAt) > new Date(existing.updatedAt)) {
+            // Overwrite with pulled data but try to preserve payment IDs if amounts match
+            const mergedPayments = pulled.payments.map((p: any, i: number) => {
+              const extP = existing.payments[i];
+              if (extP && extP.amount === p.amount && extP.method === p.method) {
+                return extP; // preserve original payment with its true ID
+              }
+              return p;
+            });
+            await db.sales.put({ ...pulled, payments: mergedPayments });
+          }
+        }
+      }
     }
   });
 

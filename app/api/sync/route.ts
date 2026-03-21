@@ -113,9 +113,89 @@ export async function POST(request: Request) {
       await appendRows("Sales", SALES_HEADERS, rows);
     }
 
+    // ── Pull phase ────────────────────────────────────────────────────────
+    // Fetch all current data from Customers and Sales to support two-way sync
+    const [customersRes, salesRes] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Customers!A:P", // 16 columns
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Sales!A:S", // 19 columns
+      }),
+    ]);
+
+    // Parse EyePower for Customers
+    const parseCustomerEyePower = (
+      rSph?: string, rCyl?: string, rAxis?: string, rAdd?: string, rVa?: string,
+      lSph?: string, lCyl?: string, lAxis?: string, lAdd?: string, lVa?: string
+    ) => {
+      const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "", add: rAdd || "", va: rVa || "" };
+      const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "", add: lAdd || "", va: lVa || "" };
+      const isEmpty = (ep: any) => !ep.sph && !ep.cyl && !ep.axis && !ep.add && !ep.va;
+      if (isEmpty(right) && isEmpty(left)) return undefined;
+      return { right, left };
+    };
+
+    const pulledCustomers = (customersRes.data.values || []).slice(1).map(row => ({
+      id: row[0] || "",
+      name: row[1] || "",
+      phone: row[2] || "",
+      email: row[3] || "",
+      eyePower: parseCustomerEyePower(row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13]),
+      createdAt: row[14] || new Date().toISOString(),
+      updatedAt: row[15] || new Date().toISOString(),
+    })).filter(c => c.id); // Valid IDs only
+
+    // Parse EyePower for Sales
+    const parseSaleEyePower = (
+      rSph?: string, rCyl?: string, rAxis?: string,
+      lSph?: string, lCyl?: string, lAxis?: string
+    ) => {
+      const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "" };
+      const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "" };
+      const isEmpty = (ep: any) => !ep.sph && !ep.cyl && !ep.axis;
+      if (isEmpty(right) && isEmpty(left)) return undefined;
+      return { right, left };
+    };
+
+    const parsePayments = (date: string, paymentsStr?: string) => {
+      if (!paymentsStr) return [];
+      return paymentsStr.split("; ").map((pStr, idx) => {
+        const [method, amountStr] = pStr.split(": ₹");
+        return {
+          id: `payment-imported-${Date.now()}-${idx}`,
+          method: method || "Unknown",
+          amount: parseFloat(amountStr) || 0,
+          date: date,
+        };
+      });
+    };
+
+    const pulledSales = (salesRes.data.values || []).slice(1).map(row => ({
+      id: row[0] || "",
+      customerId: row[1] || "",
+      customerName: row[2] || "",
+      customerPhone: row[3] || "",
+      date: row[4] || new Date().toISOString(),
+      purchaseType: row[5] ? row[5].split(", ") : [],
+      totalAmount: parseFloat(row[6]) || 0,
+      advancePaid: parseFloat(row[7]) || 0,
+      balance: parseFloat(row[8]) || 0,
+      status: row[9] || "Pending",
+      payments: parsePayments(row[4], row[10]),
+      notes: row[11] || "",
+      eyePower: parseSaleEyePower(row[12], row[13], row[14], row[15], row[16], row[17]),
+      updatedAt: row[18] || new Date().toISOString(),
+      synced: true,
+    })).filter(s => s.id); // Valid IDs only
+
     return NextResponse.json({
       success: true,
       synced: { customers: customers?.length ?? 0, sales: sales?.length ?? 0 },
+      pulledCustomers,
+      pulledSales,
     });
   } catch (error: any) {
     console.error("Sync error:", error);
