@@ -63,7 +63,7 @@ export default function RecordsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Sales Records</h1>
           <p className="text-muted-foreground">All sales transactions across all customers.</p>
         </div>
-        <Button onClick={handleExportCSV} variant="outline" className="shrink-0 gap-2">
+        <Button onClick={handleExportCSV} variant="outline" className="shrink-0 gap-2 w-full sm:w-auto">
           <Download className="h-4 w-4" />
           Export CSV
         </Button>
@@ -71,14 +71,14 @@ export default function RecordsPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <CardTitle>All Sales ({filtered?.length ?? 0})</CardTitle>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
                 placeholder="Search customer..."
-                className="pl-8"
+                className="pl-8 w-full"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -90,12 +90,12 @@ export default function RecordsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
+                  <TableHead className="whitespace-nowrap">Date</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Purchase</TableHead>
+                  <TableHead className="hidden md:table-cell">Purchase</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Balance</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Balance</TableHead>
+                  <TableHead className="hidden sm:table-cell">Status</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -113,17 +113,29 @@ export default function RecordsPage() {
                         {format(new Date(sale.date), "dd MMM yyyy")}
                       </TableCell>
                       <TableCell>
-                        <p className="font-medium">{sale.customerName}</p>
+                        <p className="font-medium line-clamp-1">{sale.customerName}</p>
                         <p className="text-xs text-muted-foreground">{sale.customerPhone || "—"}</p>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[150px] truncate">
                         {sale.purchaseType.join(", ")}
                       </TableCell>
-                      <TableCell className="font-medium">₹{sale.totalAmount.toLocaleString("en-IN")}</TableCell>
-                      <TableCell className={sale.balance > 0 ? "font-bold text-red-500" : "text-muted-foreground"}>
+                      <TableCell className="font-medium">
+                        ₹{sale.totalAmount.toLocaleString("en-IN")}
+                        <div className="sm:hidden mt-1 flex flex-col gap-1">
+                          {sale.balance > 0 && (
+                            <span className="text-xs font-bold text-red-500">
+                              Bal: ₹{sale.balance.toLocaleString("en-IN")}
+                            </span>
+                          )}
+                          <span className={`inline-flex w-fit px-1.5 py-0.5 rounded text-[10px] font-medium ${STATUS_STYLES[sale.status]}`}>
+                            {sale.status}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className={`hidden sm:table-cell ${sale.balance > 0 ? "font-bold text-red-500" : "text-muted-foreground"}`}>
                         ₹{sale.balance.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[sale.status]}`}>
                           {sale.status}
                         </span>
