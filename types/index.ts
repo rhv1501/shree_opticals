@@ -67,3 +67,9 @@ export interface CustomerRecord {
   synced: boolean;
   updatedAt: string;
 }
+
+export interface DeletedRecord {
+  id: string; // The original id
+  type: "sale" | "customer";
+  timestamp: string;
+}

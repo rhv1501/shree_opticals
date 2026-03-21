@@ -157,7 +157,12 @@ export default function CustomerDetailPage() {
     try {
       // Delete all linked sales first
       const linkedSales = await db.sales.where("customerId").equals(id).toArray();
-      await Promise.all(linkedSales.map(s => db.sales.delete(s.id)));
+      const now = new Date().toISOString();
+      await Promise.all(linkedSales.map(async s => {
+        await db.deletedRecords.put({ id: s.id, type: "sale", timestamp: now });
+        await db.sales.delete(s.id);
+      }));
+      await db.deletedRecords.put({ id, type: "customer", timestamp: now });
       await db.customers.delete(id);
       toast.success("Customer and all their sales deleted.");
       if (navigator.onLine) syncToSheets().catch(() => {});
@@ -202,6 +207,7 @@ export default function CustomerDetailPage() {
   const handleDeleteSale = async () => {
     if (!deleteSaleId) return;
     try {
+      await db.deletedRecords.put({ id: deleteSaleId, type: "sale", timestamp: new Date().toISOString() });
       await db.sales.delete(deleteSaleId);
       toast.success("Sale deleted."); setDeleteSaleId(null);
       if (navigator.onLine) syncToSheets().catch(() => {});

@@ -17,7 +17,7 @@ const SALES_HEADERS = [
 
 export async function POST(request: Request) {
   try {
-    const { customers, sales } = await request.json();
+    const { customers, sales, deletedCustomers, deletedSales } = await request.json();
 
     if (
       !process.env.GOOGLE_CLIENT_EMAIL ||
@@ -126,6 +126,59 @@ export async function POST(request: Request) {
       }),
     ]);
 
+    // ── Deletions ───────────────────────────────────────────────────────────
+    const needsDeletion = (deletedCustomers?.length > 0) || (deletedSales?.length > 0);
+    if (needsDeletion) {
+      const meta = await sheets.spreadsheets.get({ spreadsheetId });
+      const customersSheetId = meta.data.sheets?.find(s => s.properties?.title === "Customers")?.properties?.sheetId;
+      const salesSheetId = meta.data.sheets?.find(s => s.properties?.title === "Sales")?.properties?.sheetId;
+      
+      const requests: any[] = [];
+      
+      if (deletedCustomers && deletedCustomers.length > 0 && customersSheetId !== undefined) {
+        const rows = customersRes.data.values || [];
+        const indicesToDelete: number[] = [];
+        for (let i = 1; i < rows.length; i++) {
+          if (deletedCustomers.includes(rows[i][0])) {
+            indicesToDelete.push(i);
+          }
+        }
+        indicesToDelete.sort((a, b) => b - a);
+        for (const idx of indicesToDelete) {
+          requests.push({
+            deleteDimension: {
+              range: { sheetId: customersSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 }
+            }
+          });
+        }
+      }
+
+      if (deletedSales && deletedSales.length > 0 && salesSheetId !== undefined) {
+        const rows = salesRes.data.values || [];
+        const indicesToDelete: number[] = [];
+        for (let i = 1; i < rows.length; i++) {
+          if (deletedSales.includes(rows[i][0])) {
+            indicesToDelete.push(i);
+          }
+        }
+        indicesToDelete.sort((a, b) => b - a);
+        for (const idx of indicesToDelete) {
+          requests.push({
+            deleteDimension: {
+              range: { sheetId: salesSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 }
+            }
+          });
+        }
+      }
+
+      if (requests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: { requests }
+        });
+      }
+    }
+
     // Parse EyePower for Customers
     const parseCustomerEyePower = (
       rSph?: string, rCyl?: string, rAxis?: string, rAdd?: string, rVa?: string,
@@ -146,7 +199,7 @@ export async function POST(request: Request) {
       eyePower: parseCustomerEyePower(row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13]),
       createdAt: row[14] || new Date().toISOString(),
       updatedAt: row[15] || new Date().toISOString(),
-    })).filter(c => c.id); // Valid IDs only
+    })).filter(c => c.id && (!deletedCustomers || !deletedCustomers.includes(c.id))); // Valid IDs only
 
     // Parse EyePower for Sales
     const parseSaleEyePower = (
@@ -189,7 +242,7 @@ export async function POST(request: Request) {
       eyePower: parseSaleEyePower(row[12], row[13], row[14], row[15], row[16], row[17]),
       updatedAt: row[18] || new Date().toISOString(),
       synced: true,
-    })).filter(s => s.id); // Valid IDs only
+    })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id))); // Valid IDs only
 
     return NextResponse.json({
       success: true,

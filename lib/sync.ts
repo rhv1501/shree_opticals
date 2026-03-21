@@ -5,9 +5,10 @@ import { db } from "@/lib/db";
  * Returns { synced: number } or throws on API error.
  */
 export async function syncToSheets(): Promise<{ synced: number }> {
-  const [allCustomers, allSales] = await Promise.all([
+  const [allCustomers, allSales, allDeleted] = await Promise.all([
     db.customers.toArray(),
     db.sales.toArray(),
+    db.deletedRecords.toArray(),
   ]);
 
   const unsyncedSales = allSales.filter((s) => s.synced === false);
@@ -16,10 +17,18 @@ export async function syncToSheets(): Promise<{ synced: number }> {
     unsyncedCustomerIds.has(c.id)
   );
 
+  const deletedCustomers = allDeleted.filter((d) => d.type === "customer").map((d) => d.id);
+  const deletedSales = allDeleted.filter((d) => d.type === "sale").map((d) => d.id);
+
   const res = await fetch("/api/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ customers: unsyncedCustomers, sales: unsyncedSales }),
+    body: JSON.stringify({
+      customers: unsyncedCustomers,
+      sales: unsyncedSales,
+      deletedCustomers,
+      deletedSales,
+    }),
   });
 
   const data = await res.json();
@@ -28,13 +37,19 @@ export async function syncToSheets(): Promise<{ synced: number }> {
   }
 
   // Mark synced in local DB and process pulled data
-  await db.transaction("rw", db.sales, db.customers, async () => {
+  await db.transaction("rw", db.sales, db.customers, db.deletedRecords, async () => {
     for (const sale of unsyncedSales) {
       await db.sales.update(sale.id, { synced: true });
     }
 
+    if (allDeleted.length > 0) {
+      await db.deletedRecords.bulkDelete(allDeleted.map(d => d.id));
+    }
+
     if (data.pulledCustomers) {
+      const deletedCustomerSet = new Set(deletedCustomers);
       for (const pulled of data.pulledCustomers) {
+        if (deletedCustomerSet.has(pulled.id)) continue; // don't restore just deleted
         const existing = await db.customers.get(pulled.id);
         if (!existing || new Date(pulled.updatedAt) > new Date(existing.updatedAt)) {
           await db.customers.put(pulled);
@@ -44,7 +59,9 @@ export async function syncToSheets(): Promise<{ synced: number }> {
 
     if (data.pulledSales) {
       const pushedSaleIds = new Set(unsyncedSales.map((s) => s.id));
+      const deletedSaleSet = new Set(deletedSales);
       for (const pulled of data.pulledSales) {
+        if (deletedSaleSet.has(pulled.id)) continue; // don't restore just deleted
         const existing = await db.sales.get(pulled.id);
         if (!existing) {
           await db.sales.put(pulled);
