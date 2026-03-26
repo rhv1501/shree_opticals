@@ -2,6 +2,7 @@
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { syncToSheets } from "@/lib/sync";
 import { useState } from "react";
 import { format } from "date-fns";
 import { Search, Plus, History, ExternalLink } from "lucide-react";
@@ -70,6 +71,11 @@ export default function PaymentsPage() {
 
       toast.success("Payment recorded!");
       setDialogOpen(false);
+      if (navigator.onLine) {
+        syncToSheets().catch(() => {
+          // Silent catch since it's an auto-sync
+        });
+      }
     } catch (err) {
       console.error(err);
       toast.error("Failed to record payment.");
