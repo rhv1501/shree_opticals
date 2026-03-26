@@ -63,16 +63,20 @@ export function Topbar() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const { synced } = await syncToSheets();
-      if (synced === 0) {
+      const { synced, pulled } = await syncToSheets();
+      if (synced === 0 && pulled === 0) {
         if (!silent) toast.info("Everything is already synced ✓");
       } else {
         setLastSynced(new Date());
-        toast.success(
-          isAutoSync
-            ? `🔄 Back online — auto-synced ${synced} record(s) to Google Sheets!`
-            : `✓ Synced ${synced} record(s) to Google Sheets!`
-        );
+        let msg = "";
+        if (synced > 0 && pulled > 0) msg = `🔄 Pushed ${synced} and pulled ${pulled} changes!`;
+        else if (synced > 0) msg = `✓ Synced ${synced} record(s) to Google Sheets!`;
+        else if (pulled > 0) msg = `⬇️ Pulled ${pulled} fresh updates from Sheets!`;
+        
+        if (isAutoSync && synced > 0 && pulled === 0) {
+          msg = `🔄 Back online — auto-synced ${synced} record(s) to Google Sheets!`;
+        }
+        toast.success(msg);
       }
     } catch (err: any) {
       console.error(err);
@@ -117,6 +121,7 @@ export function Topbar() {
   // Handle triggered background syncs from Pusher
   useEffect(() => {
     if (triggerSync > 0 && navigator.onLine) {
+      toast.info("📡 Real-time update detected...", { id: "pusher-sync" });
       runSync({ silent: true, isAutoSync: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -2,9 +2,9 @@ import { db } from "@/lib/db";
 
 /**
  * Syncs all unsynced sales (and their customers) to Google Sheets.
- * Returns { synced: number } or throws on API error.
+ * Returns { synced: number, pulled: number } or throws on API error.
  */
-export async function syncToSheets(): Promise<{ synced: number }> {
+export async function syncToSheets(): Promise<{ synced: number; pulled: number }> {
   const [allCustomers, allSales, allDeleted] = await Promise.all([
     db.customers.toArray(),
     db.sales.toArray(),
@@ -37,6 +37,7 @@ export async function syncToSheets(): Promise<{ synced: number }> {
   }
 
   // Mark synced in local DB and process pulled data
+  let pulledCount = 0;
   await db.transaction("rw", db.sales, db.customers, db.deletedRecords, async () => {
     for (const sale of unsyncedSales) {
       await db.sales.update(sale.id, { synced: true });
@@ -50,24 +51,48 @@ export async function syncToSheets(): Promise<{ synced: number }> {
     }
 
     if (data.pulledCustomers) {
+      const pulledCustomerIds = new Set(data.pulledCustomers.map((c: any) => c.id));
       const deletedCustomerSet = new Set(deletedCustomers);
+
+      // Clean up customers deleted remotely
+      const localCustomers = await db.customers.toArray();
+      for (const local of localCustomers) {
+        if (local.synced && !pulledCustomerIds.has(local.id) && !unsyncedCustomerIds.has(local.id)) {
+           await db.customers.delete(local.id);
+           pulledCount++;
+        }
+      }
+
       for (const pulled of data.pulledCustomers) {
         if (deletedCustomerSet.has(pulled.id)) continue; // don't restore just deleted
         const existing = await db.customers.get(pulled.id);
         if (!existing || new Date(pulled.updatedAt) > new Date(existing.updatedAt)) {
           await db.customers.put(pulled);
+          pulledCount++;
         }
       }
     }
 
     if (data.pulledSales) {
+      const pulledSaleIds = new Set(data.pulledSales.map((s: any) => s.id));
       const pushedSaleIds = new Set(unsyncedSales.map((s) => s.id));
       const deletedSaleSet = new Set(deletedSales);
+
+      // Clean up sales deleted remotely
+      const localSales = await db.sales.toArray();
+      for (const local of localSales) {
+        if (local.synced && !pulledSaleIds.has(local.id) && !pushedSaleIds.has(local.id)) {
+           await db.sales.delete(local.id);
+           pulledCount++;
+        }
+      }
+
       for (const pulled of data.pulledSales) {
         if (deletedSaleSet.has(pulled.id)) continue; // don't restore just deleted
         const existing = await db.sales.get(pulled.id);
         if (!existing) {
           await db.sales.put(pulled);
+          pulledCount++;
         } else if (!pushedSaleIds.has(pulled.id) && existing.synced) {
           if (new Date(pulled.updatedAt) > new Date(existing.updatedAt)) {
             // Overwrite with pulled data but try to preserve payment IDs if amounts match
@@ -79,11 +104,12 @@ export async function syncToSheets(): Promise<{ synced: number }> {
               return p;
             });
             await db.sales.put({ ...pulled, payments: mergedPayments });
+            pulledCount++;
           }
         }
       }
     }
   });
 
-  return { synced: unsyncedSales.length };
+  return { synced: unsyncedSales.length, pulled: pulledCount };
 }
