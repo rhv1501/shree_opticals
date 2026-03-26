@@ -1,11 +1,17 @@
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
+import Pusher from "pusher";
 
 const CUSTOMER_HEADERS = [
   "Customer ID", "Name", "Phone", "Email",
   "Right SPH", "Right CYL", "Right AXIS", "Right ADD", "Right VA",
   "Left SPH", "Left CYL", "Left AXIS", "Left ADD", "Left VA",
   "Created At", "Updated At",
+  "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
+  "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
+  "LE DV SPH", "LE DV CYL", "LE DV AXIS", "LE DV VA",
+  "LE NV SPH", "LE NV CYL", "LE NV AXIS", "LE NV VA",
+  "Lens", "Bifocals", "Usage Option"
 ];
 
 const SALES_HEADERS = [
@@ -13,6 +19,11 @@ const SALES_HEADERS = [
   "Total Amount", "Advance Paid", "Balance", "Status", "Payment Methods", "Notes",
   "Right SPH", "Right CYL", "Right AXIS", "Left SPH", "Left CYL", "Left AXIS",
   "Updated At",
+  "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
+  "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
+  "LE DV SPH", "LE DV CYL", "LE DV AXIS", "LE DV VA",
+  "LE NV SPH", "LE NV CYL", "LE NV AXIS", "LE NV VA",
+  "Lens", "Bifocals", "Usage Option"
 ];
 
 export async function POST(request: Request) {
@@ -33,7 +44,7 @@ export async function POST(request: Request) {
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/^["']|["']$/g, ""),
       },
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
@@ -41,20 +52,106 @@ export async function POST(request: Request) {
     const sheets = google.sheets({ version: "v4", auth });
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
 
-    // Helper: get current row count of a sheet
-    const getRowCount = async (sheetName: string) => {
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${sheetName}!A:A`,
-      });
-      return res.data.values?.length ?? 0;
-    };
+    // ── 1. Fetch current data ────────────────────────────────────────────────
+    const [customersRes, salesRes, metaRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId, range: "Customers!A:AZ" }),
+      sheets.spreadsheets.values.get({ spreadsheetId, range: "Sales!A:AZ" }),
+      sheets.spreadsheets.get({ spreadsheetId }),
+    ]);
 
-    // Helper: append rows (with optional header if sheet is empty)
-    const appendRows = async (sheetName: string, headers: string[], rows: unknown[][]) => {
+    const existingCustomers = customersRes.data.values || [];
+    const existingSales = salesRes.data.values || [];
+
+    // Map ID -> rowIndex (0-indexed from the fetched values)
+    const customerRowMap = new Map<string, number>();
+    existingCustomers.forEach((row, i) => { if (row[0]) customerRowMap.set(row[0], i); });
+
+    const saleRowMap = new Map<string, number>();
+    existingSales.forEach((row, i) => { if (row[0]) saleRowMap.set(row[0], i); });
+
+    // ── Helper formatters ────────────────────────────────────────────────────
+    const formatCustomerRow = (c: any) => [
+      c.id, c.name, c.phone || "", c.email || "",
+      c.eyePower?.right?.sph  || "", c.eyePower?.right?.cyl  || "",
+      c.eyePower?.right?.axis || "", c.eyePower?.right?.add  || "",
+      c.eyePower?.right?.va   || "", c.eyePower?.left?.sph   || "",
+      c.eyePower?.left?.cyl   || "", c.eyePower?.left?.axis  || "",
+      c.eyePower?.left?.add   || "", c.eyePower?.left?.va    || "",
+      c.createdAt, c.updatedAt,
+      // Ext fields:
+      c.eyePower?.re?.dv?.sph || "", c.eyePower?.re?.dv?.cyl || "", c.eyePower?.re?.dv?.axis || "", c.eyePower?.re?.dv?.va || "",
+      c.eyePower?.re?.nv?.sph || "", c.eyePower?.re?.nv?.cyl || "", c.eyePower?.re?.nv?.axis || "", c.eyePower?.re?.nv?.va || "",
+      c.eyePower?.le?.dv?.sph || "", c.eyePower?.le?.dv?.cyl || "", c.eyePower?.le?.dv?.axis || "", c.eyePower?.le?.dv?.va || "",
+      c.eyePower?.le?.nv?.sph || "", c.eyePower?.le?.nv?.cyl || "", c.eyePower?.le?.nv?.axis || "", c.eyePower?.le?.nv?.va || "",
+      c.eyePower?.useLens || "", c.eyePower?.bifocals || "", c.eyePower?.usageOption || "",
+    ];
+
+    const formatSaleRow = (s: any) => [
+      s.id, s.customerId, s.customerName, s.customerPhone || "",
+      s.date, s.purchaseType?.join(", ") || "",
+      s.totalAmount, s.advancePaid, s.balance, s.status,
+      s.payments?.map((p: any) => `${p.method}: ₹${p.amount}`).join("; ") || "",
+      s.notes || "",
+      s.eyePower?.right?.sph  || "", s.eyePower?.right?.cyl  || "",
+      s.eyePower?.right?.axis || "", s.eyePower?.left?.sph   || "",
+      s.eyePower?.left?.cyl   || "", s.eyePower?.left?.axis  || "",
+      s.updatedAt,
+      // Ext fields:
+      s.eyePower?.re?.dv?.sph || "", s.eyePower?.re?.dv?.cyl || "", s.eyePower?.re?.dv?.axis || "", s.eyePower?.re?.dv?.va || "",
+      s.eyePower?.re?.nv?.sph || "", s.eyePower?.re?.nv?.cyl || "", s.eyePower?.re?.nv?.axis || "", s.eyePower?.re?.nv?.va || "",
+      s.eyePower?.le?.dv?.sph || "", s.eyePower?.le?.dv?.cyl || "", s.eyePower?.le?.dv?.axis || "", s.eyePower?.le?.dv?.va || "",
+      s.eyePower?.le?.nv?.sph || "", s.eyePower?.le?.nv?.cyl || "", s.eyePower?.le?.nv?.axis || "", s.eyePower?.le?.nv?.va || "",
+      s.eyePower?.useLens || "", s.eyePower?.bifocals || "", s.eyePower?.usageOption || "",
+    ];
+
+    // ── 2. Segregate Updates and Appends ─────────────────────────────────────
+    const valueUpdates: any[] = [];
+    const customersToAppend: any[][] = [];
+    const salesToAppend: any[][] = [];
+
+    if (customers && customers.length > 0) {
+      for (const c of customers) {
+        if (customerRowMap.has(c.id)) {
+          const rowIndex = customerRowMap.get(c.id)!;
+          valueUpdates.push({
+            range: `Customers!A${rowIndex + 1}:AZ${rowIndex + 1}`,
+            values: [formatCustomerRow(c)],
+          });
+        } else {
+          customersToAppend.push(formatCustomerRow(c));
+        }
+      }
+    }
+
+    if (sales && sales.length > 0) {
+      for (const s of sales) {
+        if (saleRowMap.has(s.id)) {
+          const rowIndex = saleRowMap.get(s.id)!;
+          valueUpdates.push({
+            range: `Sales!A${rowIndex + 1}:AZ${rowIndex + 1}`,
+            values: [formatSaleRow(s)],
+          });
+        } else {
+          salesToAppend.push(formatSaleRow(s));
+        }
+      }
+    }
+
+    // ── 3. Execute Updates ───────────────────────────────────────────────────
+    if (valueUpdates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: valueUpdates,
+        },
+      });
+    }
+
+    // ── 4. Execute Appends ───────────────────────────────────────────────────
+    const appendRows = async (sheetName: string, headers: string[], rows: any[][], currentExisting: any[][]) => {
       if (rows.length === 0) return;
-      const currentRows = await getRowCount(sheetName);
-      const rowsToWrite = currentRows === 0 ? [headers, ...rows] : rows;
+      const rowsToWrite = currentExisting.length === 0 ? [headers, ...rows] : rows;
       await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: `${sheetName}!A:A`,
@@ -64,153 +161,131 @@ export async function POST(request: Request) {
       });
     };
 
-    // ── Customers sheet ──────────────────────────────────────────────────────
-    if (customers && customers.length > 0) {
-      const rows = customers.map((c: any) => [
-        c.id,
-        c.name,
-        c.phone || "",
-        c.email || "",
-        c.eyePower?.right?.sph  || "",
-        c.eyePower?.right?.cyl  || "",
-        c.eyePower?.right?.axis || "",
-        c.eyePower?.right?.add  || "",
-        c.eyePower?.right?.va   || "",
-        c.eyePower?.left?.sph   || "",
-        c.eyePower?.left?.cyl   || "",
-        c.eyePower?.left?.axis  || "",
-        c.eyePower?.left?.add   || "",
-        c.eyePower?.left?.va    || "",
-        c.createdAt,
-        c.updatedAt,
-      ]);
-      await appendRows("Customers", CUSTOMER_HEADERS, rows);
-    }
+    await appendRows("Customers", CUSTOMER_HEADERS, customersToAppend, existingCustomers);
+    await appendRows("Sales", SALES_HEADERS, salesToAppend, existingSales);
 
-    // ── Sales sheet ──────────────────────────────────────────────────────────
-    if (sales && sales.length > 0) {
-      const rows = sales.map((s: any) => [
-        s.id,
-        s.customerId,
-        s.customerName,
-        s.customerPhone || "",
-        s.date,
-        s.purchaseType?.join(", ") || "",
-        s.totalAmount,
-        s.advancePaid,
-        s.balance,
-        s.status,
-        s.payments?.map((p: any) => `${p.method}: ₹${p.amount}`).join("; ") || "",
-        s.notes || "",
-        s.eyePower?.right?.sph  || "",
-        s.eyePower?.right?.cyl  || "",
-        s.eyePower?.right?.axis || "",
-        s.eyePower?.left?.sph   || "",
-        s.eyePower?.left?.cyl   || "",
-        s.eyePower?.left?.axis  || "",
-        s.updatedAt,
-      ]);
-      await appendRows("Sales", SALES_HEADERS, rows);
-    }
-
-    // ── Pull phase ────────────────────────────────────────────────────────
-    // Fetch all current data from Customers and Sales to support two-way sync
-    const [customersRes, salesRes] = await Promise.all([
-      sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Customers!A:P", // 16 columns
-      }),
-      sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Sales!A:S", // 19 columns
-      }),
-    ]);
-
-    // ── Deletions ───────────────────────────────────────────────────────────
+    // ── 5. Execute Deletions ─────────────────────────────────────────────────
     const needsDeletion = (deletedCustomers?.length > 0) || (deletedSales?.length > 0);
     if (needsDeletion) {
-      const meta = await sheets.spreadsheets.get({ spreadsheetId });
-      const customersSheetId = meta.data.sheets?.find(s => s.properties?.title === "Customers")?.properties?.sheetId;
-      const salesSheetId = meta.data.sheets?.find(s => s.properties?.title === "Sales")?.properties?.sheetId;
+      const customersSheetId = metaRes.data.sheets?.find(s => s.properties?.title === "Customers")?.properties?.sheetId;
+      const salesSheetId = metaRes.data.sheets?.find(s => s.properties?.title === "Sales")?.properties?.sheetId;
       
-      const requests: any[] = [];
+      const deleteRequests: any[] = [];
       
       if (deletedCustomers && deletedCustomers.length > 0 && customersSheetId !== undefined) {
-        const rows = customersRes.data.values || [];
         const indicesToDelete: number[] = [];
-        for (let i = 1; i < rows.length; i++) {
-          if (deletedCustomers.includes(rows[i][0])) {
-            indicesToDelete.push(i);
-          }
+        for (let i = 1; i < existingCustomers.length; i++) {
+          if (deletedCustomers.includes(existingCustomers[i][0])) indicesToDelete.push(i);
         }
         indicesToDelete.sort((a, b) => b - a);
         for (const idx of indicesToDelete) {
-          requests.push({
-            deleteDimension: {
-              range: { sheetId: customersSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 }
-            }
+          deleteRequests.push({
+            deleteDimension: { range: { sheetId: customersSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 } }
           });
         }
       }
 
       if (deletedSales && deletedSales.length > 0 && salesSheetId !== undefined) {
-        const rows = salesRes.data.values || [];
         const indicesToDelete: number[] = [];
-        for (let i = 1; i < rows.length; i++) {
-          if (deletedSales.includes(rows[i][0])) {
-            indicesToDelete.push(i);
-          }
+        for (let i = 1; i < existingSales.length; i++) {
+          if (deletedSales.includes(existingSales[i][0])) indicesToDelete.push(i);
         }
         indicesToDelete.sort((a, b) => b - a);
         for (const idx of indicesToDelete) {
-          requests.push({
-            deleteDimension: {
-              range: { sheetId: salesSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 }
-            }
+          deleteRequests.push({
+            deleteDimension: { range: { sheetId: salesSheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 } }
           });
         }
       }
 
-      if (requests.length > 0) {
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId,
-          requestBody: { requests }
-        });
+      if (deleteRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: deleteRequests } });
       }
     }
+
+    // ── 6. Pull Phase (Formatting existing for return) ───────────────────────
+    // We already fetched existing above, we can just parse it minus the deleted ones.
+    // However, since we might have just updated/appended some rows from the push,
+    // the local client already has these changes. We only return the base data minus deletions
+    // The client handles timestamp comparison.
+    // If the user wants the PERFECT pull, we'd fetch again, but it's okay to parse existing.
 
     // Parse EyePower for Customers
     const parseCustomerEyePower = (
       rSph?: string, rCyl?: string, rAxis?: string, rAdd?: string, rVa?: string,
-      lSph?: string, lCyl?: string, lAxis?: string, lAdd?: string, lVa?: string
+      lSph?: string, lCyl?: string, lAxis?: string, lAdd?: string, lVa?: string,
+      reDvSph?: string, reDvCyl?: string, reDvAxis?: string, reDvVa?: string,
+      reNvSph?: string, reNvCyl?: string, reNvAxis?: string, reNvVa?: string,
+      leDvSph?: string, leDvCyl?: string, leDvAxis?: string, leDvVa?: string,
+      leNvSph?: string, leNvCyl?: string, leNvAxis?: string, leNvVa?: string,
+      lens?: string, bifocals?: string, usage?: string
     ) => {
       const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "", add: rAdd || "", va: rVa || "" };
       const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "", add: lAdd || "", va: lVa || "" };
-      const isEmpty = (ep: any) => !ep.sph && !ep.cyl && !ep.axis && !ep.add && !ep.va;
-      if (isEmpty(right) && isEmpty(left)) return undefined;
-      return { right, left };
+      
+      const hasNew = reDvSph || reDvCyl || reDvAxis || reDvVa || reNvSph || reNvCyl || reNvAxis || reNvVa || leDvSph || leDvCyl || leDvAxis || leDvVa || leNvSph || leNvCyl || leNvAxis || leNvVa;
+      
+      if (!hasNew && !right.sph && !right.cyl && !right.axis && !right.add && !right.va &&
+          !left.sph && !left.cyl && !left.axis && !left.add && !left.va) return undefined;
+          
+      return { 
+        right, left,
+        re: {
+           dv: { sph: reDvSph || "", cyl: reDvCyl || "", axis: reDvAxis || "", va: reDvVa || "" },
+           nv: { sph: reNvSph || "", cyl: reNvCyl || "", axis: reNvAxis || "", va: reNvVa || "" }
+        },
+        le: {
+           dv: { sph: leDvSph || "", cyl: leDvCyl || "", axis: leDvAxis || "", va: leDvVa || "" },
+           nv: { sph: leNvSph || "", cyl: leNvCyl || "", axis: leNvAxis || "", va: leNvVa || "" }
+        },
+        useLens: lens || "",
+        bifocals: bifocals || "",
+        usageOption: usage || ""
+      };
     };
 
-    const pulledCustomers = (customersRes.data.values || []).slice(1).map(row => ({
-      id: row[0] || "",
-      name: row[1] || "",
-      phone: row[2] || "",
-      email: row[3] || "",
-      eyePower: parseCustomerEyePower(row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13]),
-      createdAt: row[14] || new Date().toISOString(),
-      updatedAt: row[15] || new Date().toISOString(),
-    })).filter(c => c.id && (!deletedCustomers || !deletedCustomers.includes(c.id))); // Valid IDs only
+    const pulledCustomers = existingCustomers.slice(1).map(row => ({
+      id: row[0] || "", name: row[1] || "", phone: row[2] || "", email: row[3] || "",
+      eyePower: parseCustomerEyePower(
+        row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13],
+        row[16], row[17], row[18], row[19], row[20], row[21], row[22], row[23],
+        row[24], row[25], row[26], row[27], row[28], row[29], row[30], row[31],
+        row[32], row[33], row[34]
+      ),
+      createdAt: row[14] || new Date().toISOString(), updatedAt: row[15] || new Date().toISOString(),
+    })).filter(c => c.id && (!deletedCustomers || !deletedCustomers.includes(c.id)));
 
     // Parse EyePower for Sales
     const parseSaleEyePower = (
       rSph?: string, rCyl?: string, rAxis?: string,
-      lSph?: string, lCyl?: string, lAxis?: string
+      lSph?: string, lCyl?: string, lAxis?: string,
+      reDvSph?: string, reDvCyl?: string, reDvAxis?: string, reDvVa?: string,
+      reNvSph?: string, reNvCyl?: string, reNvAxis?: string, reNvVa?: string,
+      leDvSph?: string, leDvCyl?: string, leDvAxis?: string, leDvVa?: string,
+      leNvSph?: string, leNvCyl?: string, leNvAxis?: string, leNvVa?: string,
+      lens?: string, bifocals?: string, usage?: string
     ) => {
       const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "" };
       const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "" };
-      const isEmpty = (ep: any) => !ep.sph && !ep.cyl && !ep.axis;
-      if (isEmpty(right) && isEmpty(left)) return undefined;
-      return { right, left };
+      
+      const hasNew = reDvSph || reDvCyl || reDvAxis || reDvVa || reNvSph || reNvCyl || reNvAxis || reNvVa || leDvSph || leDvCyl || leDvAxis || leDvVa || leNvSph || leNvCyl || leNvAxis || leNvVa;
+      
+      if (!hasNew && !right.sph && !right.cyl && !right.axis && !left.sph && !left.cyl && !left.axis) return undefined;
+      
+      return { 
+        right, left,
+        re: {
+           dv: { sph: reDvSph || "", cyl: reDvCyl || "", axis: reDvAxis || "", va: reDvVa || "" },
+           nv: { sph: reNvSph || "", cyl: reNvCyl || "", axis: reNvAxis || "", va: reNvVa || "" }
+        },
+        le: {
+           dv: { sph: leDvSph || "", cyl: leDvCyl || "", axis: leDvAxis || "", va: leDvVa || "" },
+           nv: { sph: leNvSph || "", cyl: leNvCyl || "", axis: leNvAxis || "", va: leNvVa || "" }
+        },
+        useLens: lens || "",
+        bifocals: bifocals || "",
+        usageOption: usage || ""
+      };
     };
 
     const parsePayments = (date: string, paymentsStr?: string) => {
@@ -226,23 +301,45 @@ export async function POST(request: Request) {
       });
     };
 
-    const pulledSales = (salesRes.data.values || []).slice(1).map(row => ({
-      id: row[0] || "",
-      customerId: row[1] || "",
-      customerName: row[2] || "",
-      customerPhone: row[3] || "",
-      date: row[4] || new Date().toISOString(),
+    const pulledSales = existingSales.slice(1).map(row => ({
+      id: row[0] || "", customerId: row[1] || "", customerName: row[2] || "",
+      customerPhone: row[3] || "", date: row[4] || new Date().toISOString(),
       purchaseType: row[5] ? row[5].split(", ") : [],
-      totalAmount: parseFloat(row[6]) || 0,
-      advancePaid: parseFloat(row[7]) || 0,
-      balance: parseFloat(row[8]) || 0,
-      status: row[9] || "Pending",
-      payments: parsePayments(row[4], row[10]),
-      notes: row[11] || "",
-      eyePower: parseSaleEyePower(row[12], row[13], row[14], row[15], row[16], row[17]),
-      updatedAt: row[18] || new Date().toISOString(),
-      synced: true,
-    })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id))); // Valid IDs only
+      totalAmount: parseFloat(row[6]) || 0, advancePaid: parseFloat(row[7]) || 0,
+      balance: parseFloat(row[8]) || 0, status: row[9] || "Pending",
+      payments: parsePayments(row[4], row[10]), notes: row[11] || "",
+      eyePower: parseSaleEyePower(
+        row[12], row[13], row[14], row[15], row[16], row[17],
+        row[19], row[20], row[21], row[22], row[23], row[24], row[25], row[26],
+        row[27], row[28], row[29], row[30], row[31], row[32], row[33], row[34],
+        row[35], row[36], row[37]
+      ),
+      updatedAt: row[18] || new Date().toISOString(), synced: true,
+    })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id)));
+
+    const hasPushedChanges = (valueUpdates.length > 0) || (customersToAppend.length > 0) || (salesToAppend.length > 0) || needsDeletion;
+
+    if (hasPushedChanges) {
+      if (
+        process.env.PUSHER_APP_ID &&
+        process.env.NEXT_PUBLIC_PUSHER_KEY &&
+        process.env.PUSHER_SECRET &&
+        process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+      ) {
+        try {
+          const pusher = new Pusher({
+            appId: process.env.PUSHER_APP_ID,
+            key: process.env.NEXT_PUBLIC_PUSHER_KEY,
+            secret: process.env.PUSHER_SECRET,
+            cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+            useTLS: true,
+          });
+          await pusher.trigger("shreebilling", "sync-updated", { timestamp: Date.now() });
+        } catch (e) {
+          console.error("Pusher trigger failed:", e);
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

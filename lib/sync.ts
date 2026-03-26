@@ -14,7 +14,7 @@ export async function syncToSheets(): Promise<{ synced: number }> {
   const unsyncedSales = allSales.filter((s) => s.synced === false);
   const unsyncedCustomerIds = new Set(unsyncedSales.map((s) => s.customerId));
   const unsyncedCustomers = allCustomers.filter((c) =>
-    unsyncedCustomerIds.has(c.id)
+    c.synced === false || unsyncedCustomerIds.has(c.id)
   );
 
   const deletedCustomers = allDeleted.filter((d) => d.type === "customer").map((d) => d.id);
@@ -40,6 +40,9 @@ export async function syncToSheets(): Promise<{ synced: number }> {
   await db.transaction("rw", db.sales, db.customers, db.deletedRecords, async () => {
     for (const sale of unsyncedSales) {
       await db.sales.update(sale.id, { synced: true });
+    }
+    for (const customer of unsyncedCustomers) {
+      await db.customers.update(customer.id, { synced: true });
     }
 
     if (allDeleted.length > 0) {

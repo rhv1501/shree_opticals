@@ -26,3 +26,17 @@ db.version(3).stores({
   sales: 'id, customerId, customerName, date, status, synced, updatedAt',
   deletedRecords: 'id, type, timestamp',
 });
+
+// v4: sync flag for customers
+db.version(4).stores({
+  records: 'id, name, phone, date, status, synced, updatedAt',
+  customers: 'id, name, phone, createdAt, updatedAt, synced',
+  sales: 'id, customerId, customerName, date, status, synced, updatedAt',
+  deletedRecords: 'id, type, timestamp',
+}).upgrade(async (tx) => {
+  await tx.table('customers').toCollection().modify(customer => {
+    if (customer.synced === undefined) {
+      customer.synced = true;
+    }
+  });
+});

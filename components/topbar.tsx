@@ -9,11 +9,14 @@ import { cn } from "@/lib/utils";
 import { syncToSheets } from "@/lib/sync";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import PusherClient from "pusher-js";
 
 export function Topbar() {
   const { setSidebarOpen, isOnline, setIsOnline } = useStore();
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [triggerSync, setTriggerSync] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const wasOffline = useRef(false);
   const router = useRouter();
 
@@ -24,6 +27,7 @@ export function Topbar() {
   };
 
   useEffect(() => {
+    setMounted(true);
     const handleOnline = async () => {
       setIsOnline(true);
       // Auto-sync if we just recovered from offline
@@ -86,6 +90,38 @@ export function Topbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pusher Realtime Subscription
+  useEffect(() => {
+    if (
+      process.env.NEXT_PUBLIC_PUSHER_KEY &&
+      process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+    ) {
+      const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+      });
+
+      const channel = pusher.subscribe("shreebilling");
+
+      channel.bind("sync-updated", () => {
+        setTriggerSync((prev) => prev + 1);
+      });
+
+      return () => {
+        channel.unbind("sync-updated");
+        pusher.unsubscribe("shreebilling");
+        pusher.disconnect();
+      };
+    }
+  }, []);
+
+  // Handle triggered background syncs from Pusher
+  useEffect(() => {
+    if (triggerSync > 0 && navigator.onLine) {
+      runSync({ silent: true, isAutoSync: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerSync]);
+
   const handleManualSync = () => {
     if (!isOnline) {
       toast.error("You're offline. Records will sync automatically when reconnected.");
@@ -126,26 +162,28 @@ export function Topbar() {
         </Button>
 
         {/* Online / Offline badge */}
-        <div
-          className={cn(
-            "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
-            isOnline
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-              : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
-          )}
-        >
-          {isOnline ? (
-            <>
-              <Wifi className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline-block">Online</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline-block">Offline</span>
-            </>
-          )}
-        </div>
+        {mounted && (
+          <div
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
+              isOnline
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
+                : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
+            )}
+          >
+            {isOnline ? (
+              <>
+                <Wifi className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline-block">Online</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline-block">Offline</span>
+              </>
+            )}
+          </div>
+        )}
 
         <ModeToggle />
 

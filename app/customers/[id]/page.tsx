@@ -43,8 +43,6 @@ const EYE_KEYS = ["sph", "cyl", "axis", "add", "va"] as const;
 
 interface EditCustomerState {
   name: string; phone: string; email: string;
-  rightSph: string; rightCyl: string; rightAxis: string; rightAdd: string; rightVa: string;
-  leftSph:  string; leftCyl:  string; leftAxis:  string; leftAdd:  string; leftVa:  string;
 }
 
 interface EditSaleState {
@@ -68,8 +66,6 @@ export default function CustomerDetailPage() {
   const [editCustomerOpen, setEditCustomerOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<EditCustomerState>({
     name: "", phone: "", email: "",
-    rightSph: "", rightCyl: "", rightAxis: "", rightAdd: "", rightVa: "",
-    leftSph: "",  leftCyl: "",  leftAxis: "",  leftAdd: "",  leftVa: "",
   });
 
   // ── Delete Customer dialog ─────────────────────────────────────────────────
@@ -124,13 +120,8 @@ export default function CustomerDetailPage() {
   // ── Customer CRUD ──────────────────────────────────────────────────────────
   const openEditCustomer = () => {
     if (!customer) return;
-    const ep = customer.eyePower;
     setEditCustomer({
       name: customer.name, phone: customer.phone || "", email: customer.email || "",
-      rightSph: ep?.right?.sph || "", rightCyl: ep?.right?.cyl || "", rightAxis: ep?.right?.axis || "",
-      rightAdd: ep?.right?.add || "", rightVa:  ep?.right?.va  || "",
-      leftSph:  ep?.left?.sph  || "", leftCyl:  ep?.left?.cyl  || "", leftAxis:  ep?.left?.axis  || "",
-      leftAdd:  ep?.left?.add  || "", leftVa:   ep?.left?.va   || "",
     });
     setEditCustomerOpen(true);
   };
@@ -142,10 +133,7 @@ export default function CustomerDetailPage() {
         name: editCustomer.name.trim(),
         phone: editCustomer.phone || undefined,
         email: editCustomer.email || undefined,
-        eyePower: {
-          right: { sph: editCustomer.rightSph, cyl: editCustomer.rightCyl, axis: editCustomer.rightAxis, add: editCustomer.rightAdd, va: editCustomer.rightVa },
-          left:  { sph: editCustomer.leftSph,  cyl: editCustomer.leftCyl,  axis: editCustomer.leftAxis,  add: editCustomer.leftAdd,  va: editCustomer.leftVa  },
-        },
+        synced: false,
         updatedAt: new Date().toISOString(),
       });
       toast.success("Customer updated!"); setEditCustomerOpen(false);
@@ -292,21 +280,62 @@ export default function CustomerDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {(["right", "left"] as const).map((eye) => (
-                <div key={eye} className="mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase">
-                    {eye === "right" ? "Right (OD)" : "Left (OS)"}
-                  </p>
-                  <div className="grid grid-cols-5 gap-1 text-center">
-                    {EYE_KEYS.map((f) => (
-                      <div key={f} className="bg-muted rounded p-1">
-                        <p className="text-xs text-muted-foreground">{f.toUpperCase()}</p>
-                        <p className="text-xs font-semibold">{(eyePower[eye] as Record<string, string | undefined>)[f] || "—"}</p>
-                      </div>
-                    ))}
+              {eyePower.re || eyePower.le ? (
+                <div className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {(["re", "le"] as const).map((eye) => {
+                      const ep = eyePower[eye];
+                      return (
+                        <div key={eye} className="space-y-2">
+                          <h4 className="font-semibold text-sm border-b pb-1 uppercase">{eye === "re" ? "Right Eye (RE)" : "Left Eye (LE)"}</h4>
+                          <div className="grid grid-cols-5 gap-1 text-center mb-1">
+                            <div className="text-[10px] text-muted-foreground"></div>
+                            {["SPH", "CYL", "AXIS", "V.A."].map((f) => (
+                              <div key={f} className="text-[10px] font-semibold text-muted-foreground">{f}</div>
+                            ))}
+                          </div>
+                          {(["dv", "nv"] as const).map((dist) => (
+                            <div key={dist} className="grid grid-cols-5 gap-1 text-center items-center">
+                              <div className="text-xs font-semibold text-muted-foreground uppercase">{dist === "dv" ? "D.V." : "N.V."}</div>
+                              {["sph", "cyl", "axis", "va"].map((f) => (
+                                <div key={f} className="bg-muted rounded py-1 px-0.5 text-xs">
+                                  {/* @ts-expect-error - indexing is dynamic */}
+                                  {ep?.[dist]?.[f] || "—"}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
+                  {(eyePower.useLens || eyePower.bifocals || eyePower.usageOption) && (
+                    <div className="flex flex-wrap gap-4 pt-3 border-t text-sm">
+                      {eyePower.useLens && <div><span className="text-muted-foreground">Lens:</span> <span className="font-medium">{eyePower.useLens}</span></div>}
+                      {eyePower.bifocals && <div><span className="text-muted-foreground">Bifocals:</span> <span className="font-medium">{eyePower.bifocals}</span></div>}
+                      {eyePower.usageOption && <div><span className="text-muted-foreground">Usage:</span> <span className="font-medium">{eyePower.usageOption}</span></div>}
+                    </div>
+                  )}
                 </div>
-              ))}
+              ) : (
+                <div>
+                  {(["right", "left"] as const).map((eye) => (
+                    <div key={eye} className="mb-3">
+                      <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase">
+                        {eye === "right" ? "Right (OD)" : "Left (OS)"}
+                      </p>
+                      <div className="grid grid-cols-5 gap-1 text-center">
+                        {EYE_KEYS.map((f) => (
+                          <div key={f} className="bg-muted rounded p-1">
+                            <p className="text-xs text-muted-foreground">{f.toUpperCase()}</p>
+                            <p className="text-xs font-semibold">{(eyePower[eye] as Record<string, string | undefined>)[f] || "—"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -444,30 +473,13 @@ export default function CustomerDetailPage() {
                 <Input value={editCustomer.email} onChange={e => setEditCustomer(s => ({ ...s, email: e.target.value }))} />
               </div>
             </div>
-            {/* Eye power grid */}
-            {(["right", "left"] as const).map((eye) => (
-              <div key={eye}>
-                <p className="text-xs font-semibold text-muted-foreground uppercase mb-2 border-b pb-1">
-                  {eye === "right" ? "Right Eye (OD)" : "Left Eye (OS)"}
-                </p>
-                <div className="grid grid-cols-5 gap-2">
-                  {EYE_KEYS.map((key) => {
-                    const stateKey = `${eye}${key.charAt(0).toUpperCase() + key.slice(1)}` as keyof EditCustomerState;
-                    return (
-                      <div key={key} className="space-y-1">
-                        <label className="text-xs text-muted-foreground">{key.toUpperCase()}</label>
-                        <Input
-                          className="h-8 text-sm"
-                          placeholder="—"
-                          value={editCustomer[stateKey]}
-                          onChange={e => setEditCustomer(s => ({ ...s, [stateKey]: e.target.value }))}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            {/* Eye power notice */}
+            <div className="pt-2 border-t mt-4">
+              <p className="text-sm font-medium mb-1">Prescription Update</p>
+              <p className="text-xs text-muted-foreground">
+                To update the prescription values, please <Link href={`/add-sale?customerId=${customer.id}`} className="text-primary hover:underline" onClick={() => setEditCustomerOpen(false)}>add a new sale</Link>. This ensures proper visit history tracking.
+              </p>
+            </div>
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setEditCustomerOpen(false)}>Cancel</Button>

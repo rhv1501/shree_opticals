@@ -8,9 +8,23 @@ export interface EyePower {
   va?: string;
 }
 
+export interface DetailedEyePower {
+  dv: EyePower;
+  nv: EyePower;
+}
+
 export interface EyePowerRecord {
-  right: EyePower;
-  left: EyePower;
+  // Legacy
+  right?: EyePower;
+  left?: EyePower;
+
+  // New
+  re?: DetailedEyePower;
+  le?: DetailedEyePower;
+
+  useLens?: string;
+  bifocals?: string;
+  usageOption?: string;
 }
 
 export interface PaymentEntry {
@@ -30,6 +44,7 @@ export interface Customer {
   eyePower?: EyePowerRecord;    // latest prescription on file
   createdAt: string;
   updatedAt: string;
+  synced?: boolean;
 }
 
 // A single sale / visit for a customer

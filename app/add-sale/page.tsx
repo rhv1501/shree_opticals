@@ -31,8 +31,12 @@ const powerSchema = z.object({
   sph: z.string().optional().default(""),
   cyl: z.string().optional().default(""),
   axis: z.string().optional().default(""),
-  add: z.string().optional().default(""),
   va: z.string().optional().default(""),
+});
+
+const detailedPowerSchema = z.object({
+  dv: powerSchema,
+  nv: powerSchema,
 });
 
 const formSchema = z.object({
@@ -42,7 +46,15 @@ const formSchema = z.object({
   customerEmail: z.string().optional().default(""),
   // Sale fields
   date: z.string().min(1, "Date is required"),
-  eyePower: z.object({ right: powerSchema, left: powerSchema }),
+  eyePower: z.object({
+    right: powerSchema.optional(),
+    left: powerSchema.optional(),
+    re: detailedPowerSchema.optional(),
+    le: detailedPowerSchema.optional(),
+    useLens: z.string().optional().default(""),
+    bifocals: z.string().optional().default(""),
+    usageOption: z.string().optional().default(""),
+  }),
   purchaseType: z.array(z.string()).min(1, "Select at least one category"),
   totalAmount: z.coerce.number().min(0),
   advancePaid: z.coerce.number().min(0),
@@ -60,9 +72,12 @@ const EYE_FIELDS = [
   { key: "sph" as const, label: "SPH" },
   { key: "cyl" as const, label: "CYL" },
   { key: "axis" as const, label: "AXIS" },
-  { key: "add" as const, label: "ADD" },
-  { key: "va" as const, label: "V/A" },
+  { key: "va" as const, label: "V.A." },
 ];
+
+const LENS_OPTIONS = ["WT", "SP2", "PHOTOGROMATIC", "CR39", "HMC"];
+const BIFOCAL_OPTIONS = ["KRYPTOK", "EXECUTIVE", "PROGRESSIVE", "BIFOCAL"];
+const USAGE_OPTIONS = ["CONSTANT USE", "DV ONLY"];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -94,8 +109,17 @@ export default function AddSalePage() {
       customerEmail: "",
       date: format(new Date(), "yyyy-MM-dd"),
       eyePower: {
-        right: { sph: "", cyl: "", axis: "", add: "", va: "" },
-        left: { sph: "", cyl: "", axis: "", add: "", va: "" },
+        re: {
+          dv: { sph: "", cyl: "", axis: "", va: "" },
+          nv: { sph: "", cyl: "", axis: "", va: "" },
+        },
+        le: {
+          dv: { sph: "", cyl: "", axis: "", va: "" },
+          nv: { sph: "", cyl: "", axis: "", va: "" },
+        },
+        useLens: "",
+        bifocals: "",
+        usageOption: "",
       },
       purchaseType: [],
       totalAmount: 0,
@@ -148,8 +172,31 @@ export default function AddSalePage() {
     if (customer.eyePower) {
       const ep = customer.eyePower;
       setValue("eyePower", {
-        right: { sph: ep.right?.sph ?? "", cyl: ep.right?.cyl ?? "", axis: ep.right?.axis ?? "", add: ep.right?.add ?? "", va: ep.right?.va ?? "" },
-        left:  { sph: ep.left?.sph  ?? "", cyl: ep.left?.cyl  ?? "", axis: ep.left?.axis  ?? "", add: ep.left?.add  ?? "", va: ep.left?.va  ?? "" },
+        right: ep.right ? { sph: ep.right.sph || "", cyl: ep.right.cyl || "", axis: ep.right.axis || "", va: ep.right.va || "" } : undefined,
+        left: ep.left ? { sph: ep.left.sph || "", cyl: ep.left.cyl || "", axis: ep.left.axis || "", va: ep.left.va || "" } : undefined,
+        re: ep.re ? {
+            dv: { sph: ep.re.dv.sph || "", cyl: ep.re.dv.cyl || "", axis: ep.re.dv.axis || "", va: ep.re.dv.va || "" },
+            nv: { sph: ep.re.nv.sph || "", cyl: ep.re.nv.cyl || "", axis: ep.re.nv.axis || "", va: ep.re.nv.va || "" }
+        } : (ep.right ? {
+            dv: { sph: ep.right.sph || "", cyl: ep.right.cyl || "", axis: ep.right.axis || "", va: ep.right.va || "" },
+            nv: { sph: ep.right.add ? `+${ep.right.add}` : "", cyl: "", axis: "", va: "" }
+        } : {
+            dv: { sph: "", cyl: "", axis: "", va: "" },
+            nv: { sph: "", cyl: "", axis: "", va: "" }
+        }),
+        le: ep.le ? {
+            dv: { sph: ep.le.dv.sph || "", cyl: ep.le.dv.cyl || "", axis: ep.le.dv.axis || "", va: ep.le.dv.va || "" },
+            nv: { sph: ep.le.nv.sph || "", cyl: ep.le.nv.cyl || "", axis: ep.le.nv.axis || "", va: ep.le.nv.va || "" }
+        } : (ep.left ? {
+            dv: { sph: ep.left.sph || "", cyl: ep.left.cyl || "", axis: ep.left.axis || "", va: ep.left.va || "" },
+            nv: { sph: ep.left.add ? `+${ep.left.add}` : "", cyl: "", axis: "", va: "" }
+        } : {
+            dv: { sph: "", cyl: "", axis: "", va: "" },
+            nv: { sph: "", cyl: "", axis: "", va: "" }
+        }),
+        useLens: ep.useLens || "",
+        bifocals: ep.bifocals || "",
+        usageOption: ep.usageOption || "",
       });
     }
   };
@@ -181,6 +228,7 @@ export default function AddSalePage() {
         customerId = selectedCustomer.id;
         await db.customers.update(customerId, {
           eyePower: values.eyePower,
+          synced: false,
           updatedAt: new Date().toISOString(),
         });
       } else {
@@ -194,6 +242,7 @@ export default function AddSalePage() {
           eyePower: values.eyePower,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          synced: false,
         });
       }
 
@@ -380,21 +429,65 @@ export default function AddSalePage() {
             <CardTitle className="text-lg">Eye Power (Prescription)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {(["right", "left"] as const).map((eye) => (
-              <div key={eye} className="space-y-3">
-                <h4 className="font-semibold text-sm border-b pb-1">
-                  {eye === "right" ? "Right Eye (OD)" : "Left Eye (OS)"}
-                </h4>
-                <div className="grid grid-cols-5 gap-2">
-                  {EYE_FIELDS.map(({ key, label }) => (
-                    <div key={key} className="space-y-1">
-                      <label className="text-xs text-muted-foreground font-medium">{label}</label>
-                      <Input className="h-8 text-sm" placeholder="—" {...register(`eyePower.${eye}.${key}`)} />
+            <div className="grid md:grid-cols-2 gap-6">
+              {(["re", "le"] as const).map((eye) => (
+                <div key={eye} className="space-y-3">
+                  <h4 className="font-semibold text-center border-b pb-2 text-primary uppercase">
+                    {eye === "re" ? "Right Eye (RE)" : "Left Eye (LE)"}
+                  </h4>
+                  <div className="grid grid-cols-5 gap-2 text-center items-end mb-2">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase"></div>
+                    {EYE_FIELDS.map(({ label }) => (
+                      <div key={label} className="text-xs font-semibold text-muted-foreground uppercase">{label}</div>
+                    ))}
+                  </div>
+                  {(["dv", "nv"] as const).map((dist) => (
+                    <div key={dist} className="grid grid-cols-5 gap-2 items-center">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase">{dist === "dv" ? "D.V." : "N.V."}</div>
+                      {EYE_FIELDS.map(({ key }) => (
+                        <Input key={key} className="h-9 text-sm text-center" placeholder="—" {...register(`eyePower.${eye}.${dist}.${key}`)} />
+                      ))}
                     </div>
                   ))}
                 </div>
+              ))}
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-3 pt-4 border-t">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">USE LENS</label>
+                <Controller control={control} name="eyePower.useLens" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger><SelectValue placeholder="Select lens type" /></SelectTrigger>
+                    <SelectContent>
+                      {LENS_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
               </div>
-            ))}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">BIFOCALS</label>
+                <Controller control={control} name="eyePower.bifocals" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger><SelectValue placeholder="Select bifocal" /></SelectTrigger>
+                    <SelectContent>
+                      {BIFOCAL_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">USAGE</label>
+                <Controller control={control} name="eyePower.usageOption" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger><SelectValue placeholder="Select usage..." /></SelectTrigger>
+                    <SelectContent>
+                      {USAGE_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
