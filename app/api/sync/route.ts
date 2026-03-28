@@ -4,8 +4,6 @@ import Pusher from "pusher";
 
 const CUSTOMER_HEADERS = [
   "Customer ID", "Name", "Phone", "Email",
-  "Right SPH", "Right CYL", "Right AXIS", "Right ADD", "Right VA",
-  "Left SPH", "Left CYL", "Left AXIS", "Left ADD", "Left VA",
   "Created At", "Updated At",
   "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
   "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
@@ -17,7 +15,6 @@ const CUSTOMER_HEADERS = [
 const SALES_HEADERS = [
   "Sale ID", "Customer ID", "Customer Name", "Phone", "Date", "Purchase Type",
   "Total Amount", "Advance Paid", "Balance", "Status", "Payment Methods", "Notes",
-  "Right SPH", "Right CYL", "Right AXIS", "Left SPH", "Left CYL", "Left AXIS",
   "Updated At",
   "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
   "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
@@ -72,11 +69,6 @@ export async function POST(request: Request) {
     // ── Helper formatters ────────────────────────────────────────────────────
     const formatCustomerRow = (c: any) => [
       c.id, c.name, c.phone || "", c.email || "",
-      c.eyePower?.right?.sph  || "", c.eyePower?.right?.cyl  || "",
-      c.eyePower?.right?.axis || "", c.eyePower?.right?.add  || "",
-      c.eyePower?.right?.va   || "", c.eyePower?.left?.sph   || "",
-      c.eyePower?.left?.cyl   || "", c.eyePower?.left?.axis  || "",
-      c.eyePower?.left?.add   || "", c.eyePower?.left?.va    || "",
       c.createdAt, c.updatedAt,
       // Ext fields:
       c.eyePower?.re?.dv?.sph || "", c.eyePower?.re?.dv?.cyl || "", c.eyePower?.re?.dv?.axis || "", c.eyePower?.re?.dv?.va || "",
@@ -92,9 +84,6 @@ export async function POST(request: Request) {
       s.totalAmount, s.advancePaid, s.balance, s.status,
       s.payments?.map((p: any) => `${p.method}: ₹${p.amount}`).join("; ") || "",
       s.notes || "",
-      s.eyePower?.right?.sph  || "", s.eyePower?.right?.cyl  || "",
-      s.eyePower?.right?.axis || "", s.eyePower?.left?.sph   || "",
-      s.eyePower?.left?.cyl   || "", s.eyePower?.left?.axis  || "",
       s.updatedAt,
       // Ext fields:
       s.eyePower?.re?.dv?.sph || "", s.eyePower?.re?.dv?.cyl || "", s.eyePower?.re?.dv?.axis || "", s.eyePower?.re?.dv?.va || "",
@@ -138,6 +127,16 @@ export async function POST(request: Request) {
     }
 
     // ── 3. Execute Updates ───────────────────────────────────────────────────
+    // Prepend header reset so headers are always maintained (fixes repeated Customer ID issue)
+    valueUpdates.unshift({
+      range: "Customers!A1:Y1", // Y is 25th column
+      values: [CUSTOMER_HEADERS],
+    });
+    valueUpdates.unshift({
+      range: "Sales!A1:AF1", // AF is 32th column
+      values: [SALES_HEADERS],
+    });
+
     if (valueUpdates.length > 0) {
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,
@@ -212,21 +211,18 @@ export async function POST(request: Request) {
 
     // Parse EyePower for Customers
     const parseCustomerEyePower = (
-      rSph?: string, rCyl?: string, rAxis?: string, rAdd?: string, rVa?: string,
-      lSph?: string, lCyl?: string, lAxis?: string, lAdd?: string, lVa?: string,
       reDvSph?: string, reDvCyl?: string, reDvAxis?: string, reDvVa?: string,
       reNvSph?: string, reNvCyl?: string, reNvAxis?: string, reNvVa?: string,
       leDvSph?: string, leDvCyl?: string, leDvAxis?: string, leDvVa?: string,
       leNvSph?: string, leNvCyl?: string, leNvAxis?: string, leNvVa?: string,
       lens?: string, bifocals?: string, usage?: string
     ) => {
-      const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "", add: rAdd || "", va: rVa || "" };
-      const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "", add: lAdd || "", va: lVa || "" };
+      const right = { sph: "", cyl: "", axis: "", add: "", va: "" };
+      const left = { sph: "", cyl: "", axis: "", add: "", va: "" };
       
       const hasNew = reDvSph || reDvCyl || reDvAxis || reDvVa || reNvSph || reNvCyl || reNvAxis || reNvVa || leDvSph || leDvCyl || leDvAxis || leDvVa || leNvSph || leNvCyl || leNvAxis || leNvVa;
       
-      if (!hasNew && !right.sph && !right.cyl && !right.axis && !right.add && !right.va &&
-          !left.sph && !left.cyl && !left.axis && !left.add && !left.va) return undefined;
+      if (!hasNew) return undefined;
           
       return { 
         right, left,
@@ -247,30 +243,27 @@ export async function POST(request: Request) {
     const pulledCustomers = existingCustomers.slice(1).map(row => ({
       id: row[0] || "", name: row[1] || "", phone: row[2] || "", email: row[3] || "",
       eyePower: parseCustomerEyePower(
-        row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13],
-        row[16], row[17], row[18], row[19], row[20], row[21], row[22], row[23],
-        row[24], row[25], row[26], row[27], row[28], row[29], row[30], row[31],
-        row[32], row[33], row[34]
+        row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13],
+        row[14], row[15], row[16], row[17], row[18], row[19], row[20], row[21],
+        row[22], row[23], row[24]
       ),
-      createdAt: row[14] || new Date().toISOString(), updatedAt: row[15] || new Date().toISOString(),
+      createdAt: row[4] || new Date().toISOString(), updatedAt: row[5] || new Date().toISOString(),
     })).filter(c => c.id && (!deletedCustomers || !deletedCustomers.includes(c.id)));
 
     // Parse EyePower for Sales
     const parseSaleEyePower = (
-      rSph?: string, rCyl?: string, rAxis?: string,
-      lSph?: string, lCyl?: string, lAxis?: string,
       reDvSph?: string, reDvCyl?: string, reDvAxis?: string, reDvVa?: string,
       reNvSph?: string, reNvCyl?: string, reNvAxis?: string, reNvVa?: string,
       leDvSph?: string, leDvCyl?: string, leDvAxis?: string, leDvVa?: string,
       leNvSph?: string, leNvCyl?: string, leNvAxis?: string, leNvVa?: string,
       lens?: string, bifocals?: string, usage?: string
     ) => {
-      const right = { sph: rSph || "", cyl: rCyl || "", axis: rAxis || "" };
-      const left = { sph: lSph || "", cyl: lCyl || "", axis: lAxis || "" };
+      const right = { sph: "", cyl: "", axis: "" };
+      const left = { sph: "", cyl: "", axis: "" };
       
       const hasNew = reDvSph || reDvCyl || reDvAxis || reDvVa || reNvSph || reNvCyl || reNvAxis || reNvVa || leDvSph || leDvCyl || leDvAxis || leDvVa || leNvSph || leNvCyl || leNvAxis || leNvVa;
       
-      if (!hasNew && !right.sph && !right.cyl && !right.axis && !left.sph && !left.cyl && !left.axis) return undefined;
+      if (!hasNew) return undefined;
       
       return { 
         right, left,
@@ -309,12 +302,11 @@ export async function POST(request: Request) {
       balance: parseFloat(row[8]) || 0, status: row[9] || "Pending",
       payments: parsePayments(row[4], row[10]), notes: row[11] || "",
       eyePower: parseSaleEyePower(
-        row[12], row[13], row[14], row[15], row[16], row[17],
+        row[13], row[14], row[15], row[16], row[17], row[18],
         row[19], row[20], row[21], row[22], row[23], row[24], row[25], row[26],
-        row[27], row[28], row[29], row[30], row[31], row[32], row[33], row[34],
-        row[35], row[36], row[37]
+        row[27], row[28], row[29], row[30], row[31]
       ),
-      updatedAt: row[18] || new Date().toISOString(), synced: true,
+      updatedAt: row[12] || new Date().toISOString(), synced: true,
     })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id)));
 
     const hasPushedChanges = (valueUpdates.length > 0) || (customersToAppend.length > 0) || (salesToAppend.length > 0) || needsDeletion;

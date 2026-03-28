@@ -76,6 +76,19 @@
 }
 
 @layer base {
+  html {
+    font-size: 16px; /* base for mobile */
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 17px; /* slightly larger base for tablets & desktops */
+    }
+  }
+  @media (min-width: 1280px) {
+    html {
+      font-size: 18px; /* optimal readability for wide monitors */
+    }
+  }
   * {
     @apply border-border;
   }
