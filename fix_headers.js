@@ -7,8 +7,6 @@ const spreadsheetId = process.env.GOOGLE_SHEET_ID;
 
 const CUSTOMER_HEADERS = [
   "Customer ID", "Name", "Phone", "Email",
-  "Right SPH", "Right CYL", "Right AXIS", "Right ADD", "Right VA",
-  "Left SPH", "Left CYL", "Left AXIS", "Left ADD", "Left VA",
   "Created At", "Updated At",
   "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
   "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
@@ -20,7 +18,6 @@ const CUSTOMER_HEADERS = [
 const SALES_HEADERS = [
   "Sale ID", "Customer ID", "Customer Name", "Phone", "Date", "Purchase Type",
   "Total Amount", "Advance Paid", "Balance", "Status", "Payment Methods", "Notes",
-  "Right SPH", "Right CYL", "Right AXIS", "Left SPH", "Left CYL", "Left AXIS",
   "Updated At",
   "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
   "RE NV SPH", "RE NV CYL", "RE NV AXIS", "RE NV VA",
@@ -38,24 +35,24 @@ async function run() {
   const sheets = google.sheets({ version: 'v4', auth });
   
   try {
-    console.log("Applying headers to Google Sheets...");
+    console.log("Applying correct 25-col and 32-col headers to Google Sheets...");
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
         valueInputOption: "USER_ENTERED",
         data: [
           {
-            range: "Customers!A1:AI1",
+            range: "Customers!A1:Y1",
             values: [CUSTOMER_HEADERS]
           },
           {
-            range: "Sales!A1:AL1",
+            range: "Sales!A1:AF1",
             values: [SALES_HEADERS]
           }
         ],
       },
     });
-    console.log("Headers successfully applied! Fetching row 1 to verify...");
+    console.log("Headers successfully restored! Fetching row 1 to verify...");
     
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,

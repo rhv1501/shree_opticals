@@ -8,6 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ClipboardList, Wallet, IndianRupee, TrendingUp, Users, ArrowRight } from "lucide-react";
 import { RevenueChart, StatusChart } from "@/components/dashboard-charts";
 
+const safeFormatDate = (dateStr?: string, fmt = "dd MMM yyyy", fallback = "N/A") => {
+  if (!dateStr) return fallback;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? fallback : format(d, fmt);
+};
+
 export default function DashboardPage() {
   const sales     = useLiveQuery(() => db.sales.toArray(), []);
   const customers = useLiveQuery(() => db.customers.toArray(), []);
@@ -15,14 +21,18 @@ export default function DashboardPage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
   const totalRevenue   = sales?.reduce((s, r) => s + r.totalAmount, 0) ?? 0;
-  const todayRevenue   = sales?.filter(r => r.date.startsWith(today)).reduce((s, r) => s + r.totalAmount, 0) ?? 0;
+  const todayRevenue   = sales?.filter(r => r.date?.startsWith(today)).reduce((s, r) => s + r.totalAmount, 0) ?? 0;
   const pendingBalance = sales?.filter(r => r.status !== "Paid").reduce((s, r) => s + r.balance, 0) ?? 0;
   const totalCustomers = customers?.length ?? 0;
 
   // 5 most recent sales for the activity feed
   const recentSales = sales
     ?.slice()
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    })
     .slice(0, 5);
 
   const STATUS_STYLES = {
@@ -115,7 +125,7 @@ export default function DashboardPage() {
                       <div>
                         <p className="font-medium text-sm">{sale.customerName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {sale.purchaseType.join(", ")} · {format(new Date(sale.date), "dd MMM yyyy")}
+                          {sale.purchaseType.join(", ")} · {safeFormatDate(sale.date, "dd MMM yyyy")}
                         </p>
                       </div>
                     </div>
