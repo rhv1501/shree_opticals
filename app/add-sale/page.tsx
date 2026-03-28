@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -444,9 +445,25 @@ export default function AddSalePage() {
                   {(["dv", "nv"] as const).map((dist) => (
                     <div key={dist} className="grid grid-cols-5 gap-2 items-center">
                       <div className="text-xs font-semibold text-muted-foreground uppercase">{dist === "dv" ? "D.V." : "N.V."}</div>
-                      {EYE_FIELDS.map(({ key }) => (
-                        <Input key={key} className="h-9 text-sm text-center" placeholder="—" {...register(`eyePower.${eye}.${dist}.${key}`)} />
-                      ))}
+                      {EYE_FIELDS.map(({ key }) => {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const reg = register(`eyePower.${eye}.${dist}.${key}` as any);
+                        return (
+                          <Input 
+                            key={key} 
+                            className="h-9 text-sm text-center" 
+                            placeholder="—" 
+                            {...reg} 
+                            onChange={(e) => {
+                              reg.onChange(e); // Trigger standard react-hook-form change
+                              if (dist === "dv" && (key === "cyl" || key === "axis")) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                setValue(`eyePower.${eye}.nv.${key}` as any, e.target.value);
+                              }
+                            }}
+                          />
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
@@ -522,7 +539,7 @@ export default function AddSalePage() {
 
             <div className="space-y-2 mt-4">
               <label className="text-sm font-medium">Notes (optional)</label>
-              <Input placeholder="Any extra notes about this sale..." {...register("notes")} />
+              <Textarea placeholder="Any extra notes about this sale..." className="resize-none min-h-[100px]" {...register("notes")} />
             </div>
 
             {/* Balance Summary */}
