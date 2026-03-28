@@ -39,6 +39,12 @@ const PURCHASE_TYPES = ["Frames", "Lenses", "Solutions", "Contact Lenses", "Othe
 const PAYMENT_METHODS = ["Cash", "Card", "UPI", "Bank Transfer"];
 const EYE_KEYS = ["sph", "cyl", "axis", "add", "va"] as const;
 
+const safeFormatDate = (dateStr?: string, fmt = "dd MMM yyyy", fallback = "N/A") => {
+  if (!dateStr) return fallback;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? fallback : format(d, fmt);
+};
+
 // ─── Interfaces for edit state ────────────────────────────────────────────────
 
 interface EditCustomerState {
@@ -230,7 +236,7 @@ export default function CustomerDetailPage() {
             <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
               {customer.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{customer.phone}</span>}
               {customer.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{customer.email}</span>}
-              <span>Since {format(new Date(customer.createdAt), "dd MMM yyyy")}</span>
+              <span>Since {safeFormatDate(customer.createdAt, "dd MMM yyyy")}</span>
             </div>
           </div>
         </div>
@@ -358,7 +364,7 @@ export default function CustomerDetailPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold">{format(new Date(sale.date), "dd MMM yyyy")}</span>
+                            <span className="font-semibold">{safeFormatDate(sale.date, "dd MMM yyyy")}</span>
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[sale.status]}`}>{sale.status}</span>
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">{sale.purchaseType.join(", ")}</p>
@@ -396,7 +402,7 @@ export default function CustomerDetailPage() {
                           {sale.payments.map((p) => (
                             <div key={p.id} className="flex justify-between text-xs text-muted-foreground">
                               <span>₹{p.amount.toLocaleString("en-IN")} · {p.method}</span>
-                              <span>{format(new Date(p.date), "dd MMM, hh:mm a")}</span>
+                              <span>{safeFormatDate(p.date, "dd MMM, hh:mm a")}</span>
                             </div>
                           ))}
                         </div>
@@ -426,7 +432,7 @@ export default function CustomerDetailPage() {
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
-              {selectedSale && format(new Date(selectedSale.date), "dd MMM yyyy")} · Balance: ₹{selectedSale?.balance.toLocaleString("en-IN")}
+              {selectedSale && safeFormatDate(selectedSale.date, "dd MMM yyyy")} · Balance: ₹{selectedSale?.balance.toLocaleString("en-IN")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

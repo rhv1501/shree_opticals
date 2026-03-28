@@ -11,6 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const safeFormatDate = (dateStr?: string, fmt = "dd MMM yyyy", fallback = "N/A") => {
+  if (!dateStr) return fallback;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? fallback : format(d, fmt);
+};
+
 export default function CustomersPage() {
   const [search, setSearch] = useState("");
 
@@ -153,7 +159,7 @@ export default function CustomersPage() {
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Since {format(new Date(customer.createdAt), "dd MMM yyyy")}
+                        Since {safeFormatDate(customer.createdAt, "dd MMM yyyy")}
                       </p>
                     </div>
                   </Link>
