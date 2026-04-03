@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "public/sw.js",
+    "check_invalid_dates.js",
+    "check_legacy_cols.js",
+    "delete_legacy_cols.js",
+    "fix_headers.js",
+    "read_sheets.js",
   ]),
 ]);
 

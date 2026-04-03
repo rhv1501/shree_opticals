@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { db } from "@/lib/db";
 
 /**
@@ -5,17 +7,24 @@ import { db } from "@/lib/db";
  * Returns { synced: number, pulled: number } or throws on API error.
  */
 export async function syncToSheets(): Promise<{ synced: number; pulled: number }> {
-  const [allCustomers, allSales, allDeleted] = await Promise.all([
-    db.customers.toArray(),
-    db.sales.toArray(),
+  const [unsyncedSales, unsyncedCustomers, allDeleted] = await Promise.all([
+    db.sales.filter((sale) => sale.synced === false).toArray(),
+    db.customers.filter((customer) => customer.synced === false).toArray(),
     db.deletedRecords.toArray(),
   ]);
 
-  const unsyncedSales = allSales.filter((s) => s.synced === false);
   const unsyncedCustomerIds = new Set(unsyncedSales.map((s) => s.customerId));
-  const unsyncedCustomers = allCustomers.filter((c) =>
-    c.synced === false || unsyncedCustomerIds.has(c.id)
-  );
+  const linkedCustomers = unsyncedCustomerIds.size
+    ? await db.customers.where("id").anyOf([...unsyncedCustomerIds]).toArray()
+    : [];
+  const customersToPush = new Map<string, (typeof unsyncedCustomers)[number]>();
+
+  for (const customer of unsyncedCustomers) {
+    customersToPush.set(customer.id, customer);
+  }
+  for (const customer of linkedCustomers) {
+    if (customer) customersToPush.set(customer.id, customer);
+  }
 
   const deletedCustomers = allDeleted.filter((d) => d.type === "customer").map((d) => d.id);
   const deletedSales = allDeleted.filter((d) => d.type === "sale").map((d) => d.id);
@@ -24,7 +33,7 @@ export async function syncToSheets(): Promise<{ synced: number; pulled: number }
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      customers: unsyncedCustomers,
+      customers: [...customersToPush.values()],
       sales: unsyncedSales,
       deletedCustomers,
       deletedSales,
@@ -42,7 +51,7 @@ export async function syncToSheets(): Promise<{ synced: number; pulled: number }
     for (const sale of unsyncedSales) {
       await db.sales.update(sale.id, { synced: true });
     }
-    for (const customer of unsyncedCustomers) {
+    for (const customer of customersToPush.values()) {
       await db.customers.update(customer.id, { synced: true });
     }
 
@@ -55,7 +64,7 @@ export async function syncToSheets(): Promise<{ synced: number; pulled: number }
       const deletedCustomerSet = new Set(deletedCustomers);
 
       // Clean up customers deleted remotely
-      const localCustomers = await db.customers.toArray();
+      const localCustomers = await db.customers.filter((customer) => customer.synced === true).toArray();
       for (const local of localCustomers) {
         if (local.synced && !pulledCustomerIds.has(local.id) && !unsyncedCustomerIds.has(local.id)) {
            await db.customers.delete(local.id);
@@ -79,7 +88,7 @@ export async function syncToSheets(): Promise<{ synced: number; pulled: number }
       const deletedSaleSet = new Set(deletedSales);
 
       // Clean up sales deleted remotely
-      const localSales = await db.sales.toArray();
+      const localSales = await db.sales.filter((sale) => sale.synced === true).toArray();
       for (const local of localSales) {
         if (local.synced && !pulledSaleIds.has(local.id) && !pushedSaleIds.has(local.id)) {
            await db.sales.delete(local.id);

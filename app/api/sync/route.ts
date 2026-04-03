@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import Pusher from "pusher";
@@ -309,7 +311,12 @@ export async function POST(request: Request) {
       updatedAt: row[12] || new Date().toISOString(), synced: true,
     })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id)));
 
-    const hasPushedChanges = (valueUpdates.length > 0) || (customersToAppend.length > 0) || (salesToAppend.length > 0) || needsDeletion;
+    const hasIncomingCustomerChanges = Array.isArray(customers) && customers.length > 0;
+    const hasIncomingSaleChanges = Array.isArray(sales) && sales.length > 0;
+    const hasPushedChanges =
+      hasIncomingCustomerChanges ||
+      hasIncomingSaleChanges ||
+      needsDeletion;
 
     if (hasPushedChanges) {
       if (

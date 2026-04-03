@@ -1,9 +1,10 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
+import { useMemo } from "react";
 import {
   Chart as ChartJS,
+  type ChartData,
+  type ChartOptions,
   CategoryScale,
   LinearScale,
   PointElement,
@@ -16,17 +17,62 @@ import {
 } from "chart.js";
 import { Line, Doughnut } from "react-chartjs-2";
 import { format, subDays, eachDayOfInterval } from "date-fns";
+import type { Sale } from "@/types";
+import type { TooltipItem } from "chart.js";
 
 ChartJS.register(
-  CategoryScale, LinearScale, PointElement, LineElement,
-  Title, Tooltip, Legend, ArcElement, Filler
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  Filler,
 );
 
-export function RevenueChart() {
-  // ← now reads from sales table
-  const sales = useLiveQuery(() => db.sales.toArray(), []);
+export function RevenueChart({ sales }: { sales?: Sale[] }) {
+  const chartData = useMemo<ChartData<"line"> | null>(() => {
+    if (!sales) return null;
 
-  if (!sales) {
+    const today = new Date();
+    const past7Days = eachDayOfInterval({
+      start: subDays(today, 6),
+      end: today,
+    });
+    const revenueByDay = new Map<string, number>();
+
+    for (const sale of sales) {
+      if (!sale.date) continue;
+      const dayKey = sale.date.slice(0, 10);
+      revenueByDay.set(
+        dayKey,
+        (revenueByDay.get(dayKey) ?? 0) + sale.totalAmount,
+      );
+    }
+
+    return {
+      labels: past7Days.map((day) => format(day, "MMM dd")),
+      datasets: [
+        {
+          label: "Revenue (₹)",
+          data: past7Days.map(
+            (day) => revenueByDay.get(format(day, "yyyy-MM-dd")) ?? 0,
+          ),
+          borderColor: "hsl(221.2, 83.2%, 53.3%)",
+          backgroundColor: "hsla(221.2, 83.2%, 53.3%, 0.15)",
+          tension: 0.4,
+          fill: true,
+          pointBackgroundColor: "hsl(221.2, 83.2%, 53.3%)",
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        },
+      ],
+    };
+  }, [sales]);
+
+  if (!chartData) {
     return (
       <div className="h-[250px] flex items-center justify-center text-sm text-muted-foreground">
         Loading...
@@ -34,35 +80,7 @@ export function RevenueChart() {
     );
   }
 
-  const today = new Date();
-  const past7Days = eachDayOfInterval({ start: subDays(today, 6), end: today });
-
-  const labels = past7Days.map((day) => format(day, "MMM dd"));
-  const data   = past7Days.map((day) => {
-    const dayStr = format(day, "yyyy-MM-dd");
-    return sales
-      .filter((r) => r.date.startsWith(dayStr))
-      .reduce((sum, r) => sum + r.totalAmount, 0);
-  });
-
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        label: "Revenue (₹)",
-        data,
-        borderColor: "hsl(221.2, 83.2%, 53.3%)",
-        backgroundColor: "hsla(221.2, 83.2%, 53.3%, 0.15)",
-        tension: 0.4,
-        fill: true,
-        pointBackgroundColor: "hsl(221.2, 83.2%, 53.3%)",
-        pointRadius: 4,
-        pointHoverRadius: 6,
-      },
-    ],
-  };
-
-  const options = {
+  const options: ChartOptions<"line"> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
@@ -71,7 +89,8 @@ export function RevenueChart() {
         beginAtZero: true,
         grid: { color: "rgba(0,0,0,0.05)" },
         ticks: {
-          callback: (value: number | string) => `₹${Number(value).toLocaleString("en-IN")}`,
+          callback: (value: number | string) =>
+            `₹${Number(value).toLocaleString("en-IN")}`,
         },
       },
       x: { grid: { display: false } },
@@ -80,28 +99,50 @@ export function RevenueChart() {
 
   return (
     <div className="h-[250px] w-full">
-      <Line options={options as any} data={chartData} />
+      <Line options={options} data={chartData} />
     </div>
   );
 }
 
-export function StatusChart() {
-  // ← now reads from sales table
-  const sales = useLiveQuery(() => db.sales.toArray(), []);
+export function StatusChart({ sales }: { sales?: Sale[] }) {
+  const chartData = useMemo<ChartData<"doughnut"> | null>(() => {
+    if (!sales) return null;
 
-  if (!sales) {
-    return (
-      <div className="h-[250px] flex items-center justify-center text-sm text-muted-foreground">
-        Loading...
-      </div>
-    );
-  }
+    let paid = 0;
+    let partial = 0;
+    let pending = 0;
 
-  const paid    = sales.filter((r) => r.status === "Paid").length;
-  const partial = sales.filter((r) => r.status === "Partial").length;
-  const pending = sales.filter((r) => r.status === "Pending").length;
+    for (const sale of sales) {
+      if (sale.status === "Paid") paid += 1;
+      else if (sale.status === "Partial") partial += 1;
+      else pending += 1;
+    }
 
-  if (paid + partial + pending === 0) {
+    if (paid + partial + pending === 0) return null;
+
+    return {
+      labels: ["Paid", "Partial", "Pending"],
+      datasets: [
+        {
+          data: [paid, partial, pending],
+          backgroundColor: [
+            "rgba(16, 185, 129, 0.85)",
+            "rgba(245, 158, 11, 0.85)",
+            "rgba(239, 68, 68, 0.85)",
+          ],
+          borderColor: [
+            "rgb(16, 185, 129)",
+            "rgb(245, 158, 11)",
+            "rgb(239, 68, 68)",
+          ],
+          borderWidth: 2,
+          hoverOffset: 6,
+        },
+      ],
+    };
+  }, [sales]);
+
+  if (!chartData) {
     return (
       <div className="h-[250px] flex items-center justify-center text-sm text-muted-foreground">
         No sales data yet
@@ -109,28 +150,7 @@ export function StatusChart() {
     );
   }
 
-  const chartData = {
-    labels: ["Paid", "Partial", "Pending"],
-    datasets: [
-      {
-        data: [paid, partial, pending],
-        backgroundColor: [
-          "rgba(16, 185, 129, 0.85)",
-          "rgba(245, 158, 11, 0.85)",
-          "rgba(239, 68, 68, 0.85)",
-        ],
-        borderColor: [
-          "rgb(16, 185, 129)",
-          "rgb(245, 158, 11)",
-          "rgb(239, 68, 68)",
-        ],
-        borderWidth: 2,
-        hoverOffset: 6,
-      },
-    ],
-  };
-
-  const options = {
+  const options: ChartOptions<"doughnut"> = {
     responsive: true,
     maintainAspectRatio: false,
     cutout: "65%",
@@ -141,7 +161,8 @@ export function StatusChart() {
       },
       tooltip: {
         callbacks: {
-          label: (ctx: any) => ` ${ctx.label}: ${ctx.parsed} sales`,
+          label: (ctx: TooltipItem<"doughnut">) =>
+            ` ${ctx.label}: ${ctx.parsed} sales`,
         },
       },
     },

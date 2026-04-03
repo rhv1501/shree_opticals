@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Menu, Wifi, WifiOff, RefreshCw, CheckCircle2, LogOut } from "lucide-react";
+import {
+  Menu,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  CheckCircle2,
+  LogOut,
+} from "lucide-react";
 import { ModeToggle } from "./mode-toggle";
 import { Button } from "./ui/button";
 import { useStore } from "@/store/useStore";
@@ -9,7 +16,6 @@ import { cn } from "@/lib/utils";
 import { syncToSheets } from "@/lib/sync";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import PusherClient from "pusher-js";
 
 export function Topbar() {
   const { setSidebarOpen, isOnline, setIsOnline } = useStore();
@@ -18,6 +24,8 @@ export function Topbar() {
   const [triggerSync, setTriggerSync] = useState(0);
   const [mounted, setMounted] = useState(false);
   const wasOffline = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const lastRealtimeSyncAtRef = useRef(0);
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -53,14 +61,14 @@ export function Topbar() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setIsOnline]);
 
   const runSync = async ({
     silent = false,
     isAutoSync = false,
   }: { silent?: boolean; isAutoSync?: boolean } = {}) => {
-    if (isSyncing) return;
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
     setIsSyncing(true);
     try {
       const { synced, pulled } = await syncToSheets();
@@ -69,67 +77,95 @@ export function Topbar() {
       } else {
         setLastSynced(new Date());
         let msg = "";
-        if (synced > 0 && pulled > 0) msg = `🔄 Pushed ${synced} and pulled ${pulled} changes!`;
-        else if (synced > 0) msg = `✓ Synced ${synced} record(s) to Google Sheets!`;
-        else if (pulled > 0) msg = `⬇️ Pulled ${pulled} fresh updates from Sheets!`;
-        
+        if (synced > 0 && pulled > 0)
+          msg = `🔄 Pushed ${synced} and pulled ${pulled} changes!`;
+        else if (synced > 0)
+          msg = `✓ Synced ${synced} record(s) to Google Sheets!`;
+        else if (pulled > 0)
+          msg = `⬇️ Pulled ${pulled} fresh updates from Sheets!`;
+
         if (isAutoSync && synced > 0 && pulled === 0) {
           msg = `🔄 Back online — auto-synced ${synced} record(s) to Google Sheets!`;
         }
         toast.success(msg);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(`Sync failed: ${err.message ?? "Check credentials"}`);
+      const message = err instanceof Error ? err.message : "Check credentials";
+      toast.error(`Sync failed: ${message}`);
     } finally {
+      syncInFlightRef.current = false;
       setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    // initial auto-sync on load
-    if (navigator.onLine) {
-      runSync({ silent: true, isAutoSync: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Initial auto-sync is deferred so the UI can paint first.
+    const timer = window.setTimeout(() => {
+      if (navigator.onLine) {
+        runSync({ silent: true, isAutoSync: true });
+      }
+    }, 150);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Pusher Realtime Subscription
   useEffect(() => {
     if (
-      process.env.NEXT_PUBLIC_PUSHER_KEY &&
-      process.env.NEXT_PUBLIC_PUSHER_CLUSTER
-    ) {
-      const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY, {
-        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
-      });
+      !process.env.NEXT_PUBLIC_PUSHER_KEY ||
+      !process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+    )
+      return;
+
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+
+    void (async () => {
+      const { default: PusherClient } = await import("pusher-js");
+      if (cancelled) return;
+
+      const pusher = new PusherClient(
+        process.env.NEXT_PUBLIC_PUSHER_KEY as string,
+        {
+          cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string,
+        },
+      );
 
       const channel = pusher.subscribe("shreebilling");
+      const handleUpdate = () => setTriggerSync((prev) => prev + 1);
 
-      channel.bind("sync-updated", () => {
-        setTriggerSync((prev) => prev + 1);
-      });
+      channel.bind("sync-updated", handleUpdate);
 
-      return () => {
-        channel.unbind("sync-updated");
+      cleanup = () => {
+        channel.unbind("sync-updated", handleUpdate);
         pusher.unsubscribe("shreebilling");
         pusher.disconnect();
       };
-    }
+    })();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, []);
 
   // Handle triggered background syncs from Pusher
   useEffect(() => {
     if (triggerSync > 0 && navigator.onLine) {
+      const now = Date.now();
+      if (now - lastRealtimeSyncAtRef.current < 3000) return;
+      lastRealtimeSyncAtRef.current = now;
       toast.info("📡 Real-time update detected...", { id: "pusher-sync" });
       runSync({ silent: true, isAutoSync: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerSync]);
 
   const handleManualSync = () => {
     if (!isOnline) {
-      toast.error("You're offline. Records will sync automatically when reconnected.");
+      toast.error(
+        "You're offline. Records will sync automatically when reconnected.",
+      );
       return;
     }
     runSync();
@@ -139,7 +175,11 @@ export function Topbar() {
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:justify-end md:px-6">
       {/* Mobile hamburger */}
       <div className="flex items-center md:hidden">
-        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu className="h-5 w-5" />
           <span className="sr-only">Toggle menu</span>
         </Button>
@@ -150,7 +190,11 @@ export function Topbar() {
         {lastSynced && isOnline && (
           <span className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-            Synced {lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            Synced{" "}
+            {lastSynced.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
         )}
 
@@ -162,7 +206,9 @@ export function Topbar() {
           disabled={isSyncing}
           className="h-8 gap-1.5 hidden sm:flex"
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", isSyncing && "animate-spin")} />
+          <RefreshCw
+            className={cn("h-3.5 w-3.5", isSyncing && "animate-spin")}
+          />
           <span>{isSyncing ? "Syncing…" : "Sync"}</span>
         </Button>
 
@@ -173,7 +219,7 @@ export function Topbar() {
               "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
               isOnline
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-                : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20"
+                : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20",
             )}
           >
             {isOnline ? (

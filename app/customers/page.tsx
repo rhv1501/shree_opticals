@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Search, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
@@ -11,7 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const safeFormatDate = (dateStr?: string, fmt = "dd MMM yyyy", fallback = "N/A") => {
+const safeFormatDate = (
+  dateStr?: string,
+  fmt = "dd MMM yyyy",
+  fallback = "N/A",
+) => {
   if (!dateStr) return fallback;
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? fallback : format(d, fmt);
@@ -20,30 +24,53 @@ const safeFormatDate = (dateStr?: string, fmt = "dd MMM yyyy", fallback = "N/A")
 export default function CustomersPage() {
   const [search, setSearch] = useState("");
 
-  const customers = useLiveQuery(() =>
-    db.customers.orderBy("name").toArray()
-  , []);
+  const customers = useLiveQuery(
+    () => db.customers.orderBy("name").toArray(),
+    [],
+  );
 
   const allSales = useLiveQuery(() => db.sales.toArray(), []);
 
-  const filtered = customers?.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone && c.phone.includes(search))
-  );
+  const filtered = useMemo(() => {
+    if (!customers) return customers;
 
-  const getSaleStats = (customerId: string) => {
-    const customerSales = allSales?.filter(s => s.customerId === customerId) || [];
-    const totalSpent = customerSales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const pendingBalance = customerSales.reduce((sum, s) => sum + s.balance, 0);
-    return { salesCount: customerSales.length, totalSpent, pendingBalance };
-  };
+    const q = search.toLowerCase();
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.phone && c.phone.includes(search)),
+    );
+  }, [customers, search]);
+
+  const saleStatsByCustomer = useMemo(() => {
+    const stats = new Map<
+      string,
+      { salesCount: number; totalSpent: number; pendingBalance: number }
+    >();
+
+    for (const sale of allSales ?? []) {
+      const current = stats.get(sale.customerId) ?? {
+        salesCount: 0,
+        totalSpent: 0,
+        pendingBalance: 0,
+      };
+      current.salesCount += 1;
+      current.totalSpent += sale.totalAmount;
+      current.pendingBalance += sale.balance;
+      stats.set(sale.customerId, current);
+    }
+
+    return stats;
+  }, [allSales]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-          <p className="text-muted-foreground">All registered customers and their history.</p>
+          <p className="text-muted-foreground">
+            All registered customers and their history.
+          </p>
         </div>
         <Link href="/add-sale">
           <Button className="gap-2 shrink-0">
@@ -72,11 +99,16 @@ export default function CustomersPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/10">
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">₹</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                  ₹
+                </span>
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  ₹{(allSales?.reduce((s, r) => s + r.totalAmount, 0) ?? 0).toLocaleString("en-IN")}
+                  ₹
+                  {(
+                    allSales?.reduce((s, r) => s + r.totalAmount, 0) ?? 0
+                  ).toLocaleString("en-IN")}
                 </p>
                 <p className="text-sm text-muted-foreground">Total Revenue</p>
               </div>
@@ -87,11 +119,16 @@ export default function CustomersPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-500/10">
-                <span className="text-red-600 dark:text-red-400 font-bold text-sm">!</span>
+                <span className="text-red-600 dark:text-red-400 font-bold text-sm">
+                  !
+                </span>
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  ₹{(allSales?.reduce((s, r) => s + r.balance, 0) ?? 0).toLocaleString("en-IN")}
+                  ₹
+                  {(
+                    allSales?.reduce((s, r) => s + r.balance, 0) ?? 0
+                  ).toLocaleString("en-IN")}
                 </p>
                 <p className="text-sm text-muted-foreground">Total Pending</p>
               </div>
@@ -122,12 +159,18 @@ export default function CustomersPage() {
             <div className="text-center py-12 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-3 opacity-20" />
               <p className="font-medium">No customers found</p>
-              <p className="text-sm">Add a sale to register your first customer.</p>
+              <p className="text-sm">
+                Add a sale to register your first customer.
+              </p>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered?.map((customer) => {
-                const stats = getSaleStats(customer.id);
+                const stats = saleStatsByCustomer.get(customer.id) ?? {
+                  salesCount: 0,
+                  totalSpent: 0,
+                  pendingBalance: 0,
+                };
                 return (
                   <Link key={customer.id} href={`/customers/${customer.id}`}>
                     <div className="group rounded-lg border p-4 hover:border-primary hover:bg-primary/5 transition-all cursor-pointer space-y-3">
@@ -136,13 +179,19 @@ export default function CustomersPage() {
                           {customer.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold truncate group-hover:text-primary">{customer.name}</p>
-                          <p className="text-xs text-muted-foreground">{customer.phone || "No phone"}</p>
+                          <p className="font-semibold truncate group-hover:text-primary">
+                            {customer.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {customer.phone || "No phone"}
+                          </p>
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center text-xs border-t pt-3">
                         <div>
-                          <p className="font-bold text-base">{stats.salesCount}</p>
+                          <p className="font-bold text-base">
+                            {stats.salesCount}
+                          </p>
                           <p className="text-muted-foreground">Visits</p>
                         </div>
                         <div>
@@ -152,14 +201,17 @@ export default function CustomersPage() {
                           <p className="text-muted-foreground">Spent</p>
                         </div>
                         <div>
-                          <p className={`font-bold text-base ${stats.pendingBalance > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                          <p
+                            className={`font-bold text-base ${stats.pendingBalance > 0 ? "text-red-500" : "text-emerald-500"}`}
+                          >
                             ₹{stats.pendingBalance.toLocaleString("en-IN")}
                           </p>
                           <p className="text-muted-foreground">Due</p>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Since {safeFormatDate(customer.createdAt, "dd MMM yyyy")}
+                        Since{" "}
+                        {safeFormatDate(customer.createdAt, "dd MMM yyyy")}
                       </p>
                     </div>
                   </Link>
