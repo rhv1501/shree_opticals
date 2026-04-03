@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -77,7 +76,6 @@ const formSchema = z.object({
     bifocals: z.string().optional().default(""),
     usageOption: z.string().optional().default(""),
   }),
-  purchaseType: z.array(z.string()).min(1, "Select at least one category"),
   totalAmount: z.coerce.number().min(0),
   advancePaid: z.coerce.number().min(0),
   paymentMethod: z.string().min(1, "Select a payment method"),
@@ -88,13 +86,6 @@ type FormValues = z.output<typeof formSchema>;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const PURCHASE_TYPES = [
-  "Frames",
-  "Lenses",
-  "Solutions",
-  "Contact Lenses",
-  "Others",
-];
 const PAYMENT_METHODS = ["Cash", "Card", "UPI", "Bank Transfer"];
 const EYE_FIELDS = [
   { key: "sph" as const, label: "SPH" },
@@ -156,7 +147,6 @@ export default function AddSalePage() {
         bifocals: "",
         usageOption: "",
       },
-      purchaseType: [],
       totalAmount: 0,
       advancePaid: 0,
       paymentMethod: "Cash",
@@ -473,7 +463,6 @@ export default function AddSalePage() {
         customerPhone: values.customerPhone || undefined,
         date: new Date(values.date).toISOString(),
         eyePower: values.eyePower,
-        purchaseType: values.purchaseType,
         totalAmount: values.totalAmount,
         advancePaid: values.advancePaid,
         payments,
@@ -674,50 +663,6 @@ export default function AddSalePage() {
                 </p>
               )}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* ── Purchase Categories ── */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Purchase Categories *</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Controller
-              control={control}
-              name="purchaseType"
-              render={({ field }) => (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {PURCHASE_TYPES.map((type) => (
-                    <label
-                      key={type}
-                      className={cn(
-                        "flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors hover:bg-accent",
-                        field.value.includes(type) &&
-                          "border-primary bg-primary/5",
-                      )}
-                    >
-                      <Checkbox
-                        checked={field.value.includes(type)}
-                        onCheckedChange={(checked) => {
-                          if (checked) field.onChange([...field.value, type]);
-                          else
-                            field.onChange(
-                              field.value.filter((v: string) => v !== type),
-                            );
-                        }}
-                      />
-                      <span className="text-sm font-normal">{type}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            />
-            {errors.purchaseType && (
-              <p className="text-xs text-destructive mt-2">
-                {errors.purchaseType.message}
-              </p>
-            )}
           </CardContent>
         </Card>
 

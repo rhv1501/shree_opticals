@@ -15,7 +15,7 @@ const CUSTOMER_HEADERS = [
 ];
 
 const SALES_HEADERS = [
-  "Sale ID", "Customer ID", "Customer Name", "Phone", "Date", "Purchase Type",
+  "Sale ID", "Customer ID", "Customer Name", "Phone", "Date",
   "Total Amount", "Advance Paid", "Balance", "Status", "Payment Methods", "Notes",
   "Updated At",
   "RE DV SPH", "RE DV CYL", "RE DV AXIS", "RE DV VA",
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
     const formatSaleRow = (s: any) => [
       s.id, s.customerId, s.customerName, s.customerPhone || "",
-      s.date, s.purchaseType?.join(", ") || "",
+      s.date,
       s.totalAmount, s.advancePaid, s.balance, s.status,
       s.payments?.map((p: any) => `${p.method}: ₹${p.amount}`).join("; ") || "",
       s.notes || "",
@@ -299,16 +299,15 @@ export async function POST(request: Request) {
     const pulledSales = existingSales.slice(1).map(row => ({
       id: row[0] || "", customerId: row[1] || "", customerName: row[2] || "",
       customerPhone: row[3] || "", date: row[4] || new Date().toISOString(),
-      purchaseType: row[5] ? row[5].split(", ") : [],
-      totalAmount: parseFloat(row[6]) || 0, advancePaid: parseFloat(row[7]) || 0,
-      balance: parseFloat(row[8]) || 0, status: row[9] || "Pending",
-      payments: parsePayments(row[4], row[10]), notes: row[11] || "",
+      totalAmount: parseFloat(row[5]) || 0, advancePaid: parseFloat(row[6]) || 0,
+      balance: parseFloat(row[7]) || 0, status: row[8] || "Pending",
+      payments: parsePayments(row[4], row[9]), notes: row[10] || "",
       eyePower: parseSaleEyePower(
-        row[13], row[14], row[15], row[16], row[17], row[18],
-        row[19], row[20], row[21], row[22], row[23], row[24], row[25], row[26],
-        row[27], row[28], row[29], row[30], row[31]
+        row[12], row[13], row[14], row[15], row[16], row[17],
+        row[18], row[19], row[20], row[21], row[22], row[23], row[24], row[25],
+        row[26], row[27], row[28], row[29], row[30]
       ),
-      updatedAt: row[12] || new Date().toISOString(), synced: true,
+      updatedAt: row[11] || new Date().toISOString(), synced: true,
     })).filter(s => s.id && (!deletedSales || !deletedSales.includes(s.id)));
 
     const hasIncomingCustomerChanges = Array.isArray(customers) && customers.length > 0;

@@ -325,7 +325,6 @@ export default function DashboardPage() {
                           {sale.customerName}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {sale.purchaseType.join(", ")} ·{" "}
                           {safeFormatDate(sale.date, "dd MMM yyyy")}
                         </p>
                       </div>

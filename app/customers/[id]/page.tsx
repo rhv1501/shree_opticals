@@ -54,13 +54,6 @@ const STATUS_STYLES: Record<PaymentStatus, string> = {
   Pending: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400",
 };
 
-const PURCHASE_TYPES = [
-  "Frames",
-  "Lenses",
-  "Solutions",
-  "Contact Lenses",
-  "Others",
-];
 const PAYMENT_METHODS = ["Cash", "Card", "UPI", "Bank Transfer"];
 const EYE_KEYS = ["sph", "cyl", "axis", "add", "va"] as const;
 
@@ -84,7 +77,6 @@ interface EditCustomerState {
 
 interface EditSaleState {
   date: string;
-  purchaseType: string[];
   totalAmount: string;
   advancePaid: string;
   notes: string;
@@ -117,7 +109,6 @@ export default function CustomerDetailPage() {
   const [editSaleOpen, setEditSaleOpen] = useState(false);
   const [editSale, setEditSale] = useState<EditSaleState>({
     date: "",
-    purchaseType: [],
     totalAmount: "",
     advancePaid: "",
     notes: "",
@@ -260,7 +251,6 @@ export default function CustomerDetailPage() {
     setEditingSaleId(sale.id);
     setEditSale({
       date: format(new Date(sale.date), "yyyy-MM-dd"),
-      purchaseType: [...sale.purchaseType],
       totalAmount: sale.totalAmount.toString(),
       advancePaid: sale.advancePaid.toString(),
       notes: sale.notes || "",
@@ -290,7 +280,6 @@ export default function CustomerDetailPage() {
     try {
       await db.sales.update(editingSaleId, {
         date: new Date(editSale.date).toISOString(),
-        purchaseType: editSale.purchaseType,
         totalAmount: total,
         advancePaid: advance,
         balance,
@@ -583,9 +572,6 @@ export default function CustomerDetailPage() {
                               {sale.status}
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {sale.purchaseType.join(", ")}
-                          </p>
                           {sale.notes && (
                             <p className="text-xs text-muted-foreground italic mt-0.5">
                               {sale.notes}
@@ -836,30 +822,6 @@ export default function CustomerDetailPage() {
                   setEditSale((s) => ({ ...s, date: e.target.value }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Purchase Categories</label>
-              <div className="grid grid-cols-2 gap-2">
-                {PURCHASE_TYPES.map((type) => (
-                  <label
-                    key={type}
-                    className="flex items-center gap-2 text-sm cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={editSale.purchaseType.includes(type)}
-                      onCheckedChange={(checked) => {
-                        setEditSale((s) => ({
-                          ...s,
-                          purchaseType: checked
-                            ? [...s.purchaseType, type]
-                            : s.purchaseType.filter((t) => t !== type),
-                        }));
-                      }}
-                    />
-                    {type}
-                  </label>
-                ))}
-              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

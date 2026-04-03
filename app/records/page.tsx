@@ -52,7 +52,6 @@ export default function RecordsPage() {
       "Date",
       "Customer",
       "Phone",
-      "Purchase",
       "Total",
       "Paid",
       "Balance",
@@ -63,7 +62,6 @@ export default function RecordsPage() {
         format(new Date(s.date), "dd/MM/yyyy"),
         `"${s.customerName}"`,
         `"${s.customerPhone || ""}"`,
-        `"${s.purchaseType.join(", ")}"`,
         s.totalAmount,
         s.advancePaid,
         s.balance,
@@ -122,9 +120,6 @@ export default function RecordsPage() {
                 <TableRow>
                   <TableHead className="whitespace-nowrap">Date</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead className="hidden md:table-cell">
-                    Purchase
-                  </TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead className="hidden sm:table-cell">
                     Balance
@@ -156,9 +151,6 @@ export default function RecordsPage() {
                         <p className="text-xs text-muted-foreground">
                           {sale.customerPhone || "—"}
                         </p>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[150px] truncate">
-                        {sale.purchaseType.join(", ")}
                       </TableCell>
                       <TableCell className="font-medium">
                         ₹{sale.totalAmount.toLocaleString("en-IN")}

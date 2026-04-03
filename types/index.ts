@@ -55,7 +55,6 @@ export interface Sale {
   customerPhone?: string;
   date: string;
   eyePower?: EyePowerRecord;    // prescription for this specific sale
-  purchaseType: string[];
   totalAmount: number;
   advancePaid: number;
   payments: PaymentEntry[];
@@ -73,7 +72,6 @@ export interface CustomerRecord {
   phone?: string;
   date: string;
   eyePower?: EyePowerRecord | string;
-  purchaseType: string[];
   totalAmount: number;
   payments: PaymentEntry[];
   advancePaid: number;
